@@ -74,11 +74,12 @@ const ActivityModal = ({ isOpen, onClose, onActivityAdded }) => {
           </div>
           
           <div>
-             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Lead (Optional)</label>
+             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Lead</label>
              <select 
               name="AssociationID" 
               value={formData.AssociationID} 
               onChange={handleChange} 
+              required
               className="input-field bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700" 
              >
                <option value="">-- Select a Lead --</option>
@@ -119,6 +120,7 @@ const ActivityModal = ({ isOpen, onClose, onActivityAdded }) => {
               value={formData.ActivityDetails} 
               onChange={handleChange} 
               rows="3" 
+              required
               placeholder="Additional notes or activity details..."
               className="input-field bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700 resize-none" 
             />

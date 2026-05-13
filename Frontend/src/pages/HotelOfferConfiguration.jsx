@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Building2, Gift, Percent, Plus, Save, Trash2 } from 'lucide-react';
+import { Building2, Gift, Percent, Plus, Save, Trash2, Search, Edit3, ChevronRight, AlertCircle } from 'lucide-react';
 import api from '../api/client';
 
 const segmentLabels = ['Hot', 'Warm', 'Cold'];
@@ -19,17 +19,24 @@ const emptyForm = {
 
 const HotelOfferConfiguration = () => {
   const [hotelOffers, setHotelOffers] = useState([]);
-  const [formData, setFormData] = useState(emptyForm);
-  const [editingId, setEditingId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [editingHotel, setEditingHotel] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [formData, setFormData] = useState(emptyForm);
 
   const loadHotelOffers = async () => {
     setLoading(true);
     try {
       const response = await api.get('/hotel-offers');
-      setHotelOffers(response.data || []);
+      const data = response.data || [];
+      setHotelOffers(data);
+      
+      // If we have hotels and none selected, select the first one
+      if (data.length > 0 && !editingHotel) {
+        selectHotel(data[0]);
+      }
     } catch (error) {
       console.error('Failed to load hotel offers:', error);
     } finally {
@@ -41,33 +48,75 @@ const HotelOfferConfiguration = () => {
     loadHotelOffers();
   }, []);
 
-  const selectedHotel = useMemo(
-    () => hotelOffers.find((hotel) => hotel.HotelOfferID === editingId),
-    [hotelOffers, editingId],
-  );
+  const selectHotel = (hotel) => {
+    setEditingHotel(hotel);
+    if (hotel) {
+      setFormData({
+        HotelName: hotel.HotelName || '',
+        HotelCode: hotel.HotelCode || '',
+        MaxDiscountPercent: hotel.MaxDiscountPercent || 0,
+        DefaultOffer: hotel.DefaultOffer || '',
+        OfferRules: segmentLabels.map((leadSegment) => {
+          const rule = hotel.OfferRules?.find((item) => item.leadSegment === leadSegment) || {};
+          return {
+            leadSegment,
+            initialOffer: rule.initialOffer || '',
+            followUpOffer: rule.followUpOffer || '',
+            autoFollowUpOffer: rule.autoFollowUpOffer || '',
+          };
+        }),
+      });
+    } else {
+      setFormData(emptyForm);
+    }
+  };
 
-  const resetForm = () => {
-    setEditingId(null);
+  const handleAddNew = () => {
+    setEditingHotel(null);
     setFormData(emptyForm);
   };
 
-  const editHotel = (hotel) => {
-    setEditingId(hotel.HotelOfferID);
-    setFormData({
-      HotelName: hotel.HotelName || '',
-      HotelCode: hotel.HotelCode || '',
-      MaxDiscountPercent: hotel.MaxDiscountPercent || 0,
-      DefaultOffer: hotel.DefaultOffer || '',
-      OfferRules: segmentLabels.map((leadSegment) => {
-        const rule = hotel.OfferRules?.find((item) => item.leadSegment === leadSegment) || {};
-        return {
-          leadSegment,
-          initialOffer: rule.initialOffer || '',
-          followUpOffer: rule.followUpOffer || '',
-          autoFollowUpOffer: rule.autoFollowUpOffer || '',
-        };
-      }),
-    });
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setMessage('');
+
+    try {
+      const editingId = editingHotel?.HotelOfferID;
+      const endpoint = editingId ? `/hotel-offers/${editingId}` : '/hotel-offers';
+      const method = editingId ? api.put : api.post;
+      
+      const response = await method(endpoint, formData);
+      await loadHotelOffers();
+      
+      // If it was a new hotel, select it in the list (if we can find it)
+      if (!editingId && response.data) {
+        setEditingHotel(response.data);
+      }
+      
+      setMessage('Configuration saved successfully.');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (error) {
+      console.error('Failed to save hotel offer:', error);
+      setMessage('Unable to save configuration.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteHotelOffer = async (e, hotelOfferId) => {
+    e.stopPropagation();
+    if (!window.confirm('Are you sure you want to delete this hotel configuration?')) return;
+    
+    try {
+      await api.delete(`/hotel-offers/${hotelOfferId}`);
+      if (editingHotel?.HotelOfferID === hotelOfferId) {
+        handleAddNew();
+      }
+      await loadHotelOffers();
+    } catch (error) {
+      console.error('Failed to delete hotel offer:', error);
+    }
   };
 
   const updateRule = (leadSegment, field, value) => {
@@ -79,127 +128,225 @@ const HotelOfferConfiguration = () => {
     }));
   };
 
-  const saveHotelOffer = async (event) => {
-    event.preventDefault();
-    setSaving(true);
-    setMessage('');
-
-    try {
-      const endpoint = editingId ? `/hotel-offers/${editingId}` : '/hotel-offers';
-      const method = editingId ? api.put : api.post;
-      await method(endpoint, formData);
-      await loadHotelOffers();
-      resetForm();
-      setMessage('Hotel offer configuration saved.');
-    } catch (error) {
-      console.error('Failed to save hotel offer:', error);
-      setMessage('Unable to save hotel offer configuration.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const deleteHotelOffer = async (hotelOfferId) => {
-    await api.delete(`/hotel-offers/${hotelOfferId}`);
-    await loadHotelOffers();
-    if (editingId === hotelOfferId) resetForm();
-  };
+  const filteredHotels = hotelOffers.filter(hotel => 
+    hotel.HotelName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (hotel.HotelCode && hotel.HotelCode.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="flex items-center justify-between">
+    <div className="h-[calc(100vh-140px)] flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0">
         <div>
-          <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">Hotel Offer Configuration</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Configure default hotel offers and maximum discount limits for lead emails.</p>
+          <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">Property Configurations</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Manage property-specific offers and discount constraints.</p>
         </div>
-        <button onClick={resetForm} className="btn-primary inline-flex items-center gap-2">
-          <Plus size={18} />
-          New Hotel
-        </button>
+        {message && (
+          <div className="rounded-xl border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 px-4 py-2 text-sm font-bold flex items-center gap-2">
+            <Save size={16} /> {message}
+          </div>
+        )}
       </div>
 
-      {message && (
-        <div className="rounded-lg border border-primary-200 dark:border-primary-500/20 bg-primary-50 dark:bg-primary-500/10 text-primary-700 dark:text-primary-300 px-4 py-3 text-sm font-semibold">
-          {message}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px] gap-6">
-        <section className="rounded-xl border border-slate-200 dark:border-dark-700 bg-white dark:bg-dark-900 overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-200 dark:border-dark-700 flex items-center gap-2">
-            <Building2 size={18} className="text-primary-600 dark:text-primary-400" />
-            <h2 className="font-bold text-slate-900 dark:text-white">Configured Hotels</h2>
-          </div>
-          {loading ? (
-            <div className="p-8 text-sm text-slate-500">Loading hotel offers...</div>
-          ) : hotelOffers.length === 0 ? (
-            <div className="p-8 text-sm text-slate-500">No hotel offer configuration found.</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 dark:bg-dark-800 text-left text-xs uppercase tracking-wider text-slate-500">
-                  <tr>
-                    <th className="px-5 py-3">Hotel</th>
-                    <th className="px-5 py-3">Max Discount</th>
-                    <th className="px-5 py-3">Default Offer</th>
-                    <th className="px-5 py-3 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-dark-800">
-                  {hotelOffers.map((hotel) => (
-                    <tr key={hotel.HotelOfferID} className={selectedHotel?.HotelOfferID === hotel.HotelOfferID ? 'bg-primary-50/60 dark:bg-primary-500/10' : ''}>
-                      <td className="px-5 py-4">
-                        <button onClick={() => editHotel(hotel)} className="text-left">
-                          <span className="block font-bold text-slate-900 dark:text-white">{hotel.HotelName}</span>
-                          <span className="text-xs text-slate-500">{hotel.HotelCode || 'No code'}</span>
-                        </button>
-                      </td>
-                      <td className="px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">{hotel.MaxDiscountPercent || 0}%</td>
-                      <td className="px-5 py-4 text-slate-600 dark:text-slate-300 max-w-md">{hotel.DefaultOffer || '-'}</td>
-                      <td className="px-5 py-4 text-right">
-                        <button onClick={() => deleteHotelOffer(hotel.HotelOfferID)} className="p-2 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10" title="Delete hotel offer">
-                          <Trash2 size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      <div className="flex-1 flex flex-col md:flex-row gap-6 min-h-0 overflow-hidden">
+        {/* Left Side: Property List */}
+        <div className="w-full md:w-[350px] flex flex-col bg-white dark:bg-dark-900 rounded-2xl border border-slate-200 dark:border-dark-700 overflow-hidden shadow-sm">
+          <div className="p-4 border-b border-slate-100 dark:border-dark-800 space-y-4">
+            <button 
+              onClick={handleAddNew}
+              className="w-full py-2.5 px-4 rounded-xl bg-primary-50 dark:bg-primary-500/10 text-primary-600 dark:text-primary-400 font-bold text-sm flex items-center justify-center gap-2 hover:bg-primary-100 dark:hover:bg-primary-500/20 transition-all border border-primary-100 dark:border-primary-500/20"
+            >
+              <Plus size={18} /> Add New Property
+            </button>
+            <div className="relative">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input 
+                type="text" 
+                placeholder="Search properties..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 rounded-xl bg-slate-50 dark:bg-dark-800 border-none text-sm focus:ring-2 focus:ring-primary-500 transition-all outline-none" 
+              />
             </div>
-          )}
-        </section>
-
-        <form onSubmit={saveHotelOffer} className="rounded-xl border border-slate-200 dark:border-dark-700 bg-white dark:bg-dark-900 p-5 space-y-5">
-          <div className="flex items-center gap-2">
-            <Gift size={18} className="text-primary-600 dark:text-primary-400" />
-            <h2 className="font-bold text-slate-900 dark:text-white">{editingId ? 'Edit Hotel Offer' : 'Add Hotel Offer'}</h2>
           </div>
 
-          <input required value={formData.HotelName} onChange={(e) => setFormData((prev) => ({ ...prev, HotelName: e.target.value }))} placeholder="Hotel name" className="input-field bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700" />
-          <input value={formData.HotelCode} onChange={(e) => setFormData((prev) => ({ ...prev, HotelCode: e.target.value }))} placeholder="Hotel code" className="input-field bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700" />
-          <div className="relative">
-            <Percent size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input type="number" min="0" max="100" value={formData.MaxDiscountPercent} onChange={(e) => setFormData((prev) => ({ ...prev, MaxDiscountPercent: e.target.value }))} placeholder="Maximum discount" className="input-field pl-10 bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700" />
-          </div>
-          <textarea value={formData.DefaultOffer} onChange={(e) => setFormData((prev) => ({ ...prev, DefaultOffer: e.target.value }))} rows="3" placeholder="Default hotel offer" className="input-field bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700 resize-none" />
-
-          <div className="space-y-3">
-            {formData.OfferRules.map((rule) => (
-              <div key={rule.leadSegment} className="rounded-lg border border-slate-200 dark:border-dark-700 p-3 space-y-2">
-                <p className="text-xs font-black uppercase tracking-wider text-slate-500">{rule.leadSegment}</p>
-                <input value={rule.initialOffer} onChange={(e) => updateRule(rule.leadSegment, 'initialOffer', e.target.value)} placeholder="Fixed offer for New Lead" className="input-field bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700 text-sm" />
-                <input value={rule.followUpOffer} onChange={(e) => updateRule(rule.leadSegment, 'followUpOffer', e.target.value)} placeholder="Fixed offer for Follow-up" className="input-field bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700 text-sm" />
-                <p className="text-[10px] text-slate-400 italic">Auto follow-up uses the Hotel Default Offer above.</p>
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
+            {loading ? (
+              <div className="p-8 text-center space-y-2">
+                <div className="w-8 h-8 border-3 border-primary-500/20 border-t-primary-500 rounded-full animate-spin mx-auto"></div>
+                <p className="text-xs text-slate-400 font-medium tracking-wide uppercase">Syncing Properties...</p>
               </div>
-            ))}
+            ) : filteredHotels.length === 0 ? (
+              <div className="p-8 text-center">
+                <p className="text-sm text-slate-400">No properties found</p>
+              </div>
+            ) : (
+              filteredHotels.map((hotel) => (
+                <button
+                  key={hotel.HotelOfferID}
+                  onClick={() => selectHotel(hotel)}
+                  className={`w-full text-left p-4 rounded-xl transition-all duration-200 group flex items-center justify-between ${
+                    editingHotel?.HotelOfferID === hotel.HotelOfferID
+                      ? 'bg-primary-600 text-white shadow-lg shadow-primary-500/25 active:scale-[0.98]'
+                      : 'hover:bg-slate-50 dark:hover:bg-dark-800 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <p className={`font-bold truncate ${editingHotel?.HotelOfferID === hotel.HotelOfferID ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
+                      {hotel.HotelName}
+                    </p>
+                    <p className={`text-[10px] font-black uppercase tracking-widest mt-1 ${editingHotel?.HotelOfferID === hotel.HotelOfferID ? 'text-primary-100' : 'text-slate-400'}`}>
+                      {hotel.HotelCode}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Trash2 
+                      size={16} 
+                      onClick={(e) => deleteHotelOffer(e, hotel.HotelOfferID)}
+                      className={`shrink-0 transition-opacity ${editingHotel?.HotelOfferID === hotel.HotelOfferID ? 'text-white/60 hover:text-white' : 'text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100'}`} 
+                    />
+                    <ChevronRight size={18} className={editingHotel?.HotelOfferID === hotel.HotelOfferID ? 'text-white/40' : 'text-slate-300'} />
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Right Side: Configuration Form */}
+        <div className="flex-1 flex flex-col bg-white dark:bg-dark-900 rounded-2xl border border-slate-200 dark:border-dark-700 overflow-hidden shadow-sm">
+          <div className="p-6 border-b border-slate-100 dark:border-dark-800 bg-slate-50/50 dark:bg-dark-800/30 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-primary-100 dark:bg-primary-500/20 flex items-center justify-center text-primary-600 dark:text-primary-400">
+                <Gift size={22} />
+              </div>
+              <div>
+                <h2 className="text-lg font-black text-slate-900 dark:text-white">
+                  {editingHotel ? 'Edit Property Offers' : 'New Property Setup'}
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Define automated rewards and offer triggers.</p>
+              </div>
+            </div>
+            <button 
+              onClick={handleSave} 
+              disabled={saving || !formData.HotelName || !formData.HotelCode}
+              className="btn-primary px-6 py-2.5 flex items-center gap-2 font-bold disabled:opacity-50 active:scale-95 transition-all shadow-lg shadow-primary-500/20"
+            >
+              {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={18} />}
+              {saving ? 'Saving...' : 'Save Configuration'}
+            </button>
           </div>
 
-          <button type="submit" disabled={saving} className="btn-primary w-full inline-flex items-center justify-center gap-2 disabled:opacity-60">
-            <Save size={18} />
-            {saving ? 'Saving...' : 'Save Configuration'}
-          </button>
-        </form>
+          <form className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
+            {/* Core Details */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Property Name</label>
+                <input 
+                  required 
+                  value={formData.HotelName} 
+                  onChange={(e) => setFormData((prev) => ({ ...prev, HotelName: e.target.value }))} 
+                  placeholder="E.g. Grand Plaza Resort" 
+                  className="w-full p-3 rounded-xl bg-slate-50 dark:bg-dark-800 border-2 border-transparent focus:border-primary-500 focus:bg-white dark:focus:bg-dark-800 transition-all outline-none font-bold text-slate-900 dark:text-white" 
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Property Code</label>
+                <input 
+                  required
+                  value={formData.HotelCode} 
+                  onChange={(e) => setFormData((prev) => ({ ...prev, HotelCode: e.target.value }))} 
+                  placeholder="GPR-2024" 
+                  className="w-full p-3 rounded-xl bg-slate-50 dark:bg-dark-800 border-2 border-transparent focus:border-primary-500 focus:bg-white dark:focus:bg-dark-800 transition-all outline-none uppercase font-bold text-slate-900 dark:text-white" 
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Max Discount Limit</label>
+                <div className="relative">
+                  <Percent size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input 
+                    type="number" 
+                    value={formData.MaxDiscountPercent} 
+                    onChange={(e) => setFormData((prev) => ({ ...prev, MaxDiscountPercent: e.target.value }))} 
+                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-50 dark:bg-dark-800 border-2 border-transparent focus:border-primary-500 focus:bg-white dark:focus:bg-dark-800 transition-all outline-none font-bold text-slate-900 dark:text-white" 
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Global Default Offer</label>
+              <textarea 
+                value={formData.DefaultOffer} 
+                onChange={(e) => setFormData((prev) => ({ ...prev, DefaultOffer: e.target.value }))} 
+                rows="2" 
+                placeholder="Describe the standard offer applied to all leads if no segment rules match..." 
+                className="w-full p-4 rounded-xl bg-slate-50 dark:bg-dark-800 border-2 border-transparent focus:border-primary-500 focus:bg-white dark:focus:bg-dark-800 transition-all outline-none text-slate-700 dark:text-slate-300 resize-none italic" 
+              />
+            </div>
+
+            {/* Segment Rules */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 border-b border-slate-100 dark:border-dark-800 pb-2">
+                <Gift size={16} className="text-primary-500" />
+                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Segment Intelligence Rules</h3>
+              </div>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {formData.OfferRules.map((rule) => (
+                  <div key={rule.leadSegment} className="rounded-2xl border border-slate-100 dark:border-dark-800 p-5 bg-white dark:bg-dark-800/50 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                        rule.leadSegment === 'Hot' ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400' :
+                        rule.leadSegment === 'Warm' ? 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400' :
+                        'bg-slate-50 text-slate-600 dark:bg-dark-700 dark:text-slate-400'
+                      }`}>
+                        {rule.leadSegment} Segment
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Initial Outreach Offer</label>
+                        <input 
+                          value={rule.initialOffer} 
+                          onChange={(e) => updateRule(rule.leadSegment, 'initialOffer', e.target.value)} 
+                          placeholder="E.g. Free Breakfast" 
+                          className="w-full p-2.5 rounded-lg bg-slate-50 dark:bg-dark-700 border-none text-sm focus:ring-2 focus:ring-primary-500 outline-none" 
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Follow-up Incentive</label>
+                        <input 
+                          value={rule.followUpOffer} 
+                          onChange={(e) => updateRule(rule.leadSegment, 'followUpOffer', e.target.value)} 
+                          placeholder="E.g. 10% Off Venue" 
+                          className="w-full p-2.5 rounded-lg bg-slate-50 dark:bg-dark-700 border-none text-sm focus:ring-2 focus:ring-primary-500 outline-none" 
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            {!editingHotel && (
+              <div className="p-4 rounded-2xl bg-primary-50 dark:bg-primary-500/5 border border-primary-100 dark:border-primary-500/20 flex gap-4">
+                <AlertCircle size={20} className="text-primary-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-primary-700 dark:text-primary-300 leading-relaxed font-medium">
+                  <strong>New Property Setup:</strong> You are creating a fresh configuration. All offers defined here will be available to the AI when drafting emails for leads assigned to this Property Code.
+                </p>
+              </div>
+            )}
+          </form>
+        </div>
       </div>
+
+      <style dangerouslySetInnerHTML={{ __html: `
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; }
+      ` }} />
     </div>
   );
 };

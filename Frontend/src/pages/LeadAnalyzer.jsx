@@ -28,13 +28,16 @@ import {
   LayoutList,
   Mail,
   MessageSquare,
+  Phone,
   Plus,
   Search,
   Send,
   SlidersHorizontal,
+  Smartphone,
   Target,
   Trash2,
   TrendingUp,
+  User,
   X,
   Zap,
 } from 'lucide-react';
@@ -61,7 +64,8 @@ const demoLeads = [
     Comment: 'Analyzing engagement patterns and proposal fit.',
     GroupType: 'Corporate',
     SubmittedBy: 'Website',
-    CreatedOn: new Date().toISOString(),
+    CreatedOn: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    LastActivityDate: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
     IsActive: true,
   },
   {
@@ -83,7 +87,7 @@ const demoLeads = [
     Comment: 'Send updated pricing sheet.',
     GroupType: 'Association',
     SubmittedBy: 'Email',
-    CreatedOn: new Date().toISOString(),
+    CreatedOn: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
     IsActive: true,
   },
 ];
@@ -106,25 +110,51 @@ const displayValue = (value) => {
   return value;
 };
 
-const normalizeLead = (lead, index) => ({
-  id: lead.LeadID || lead._id || `TEMP-${index + 1}`,
-  leadNo: lead.LeadNo || `LEAD-${index + 1}`,
-  companyName: lead.CompanyName || 'Unnamed Company',
-  contactName: [lead.FirstName, lead.LastName].filter(Boolean).join(' ') || 'Unnamed Contact',
-  email: lead.Email || '-',
-  mobileNo: lead.MobileNo || lead.TelephoneNo || '-',
-  city: [lead.City, lead.State, lead.Country].filter(Boolean).join(', ') || '-',
-  type: lead.GroupType || lead.Lead_Source_Term || 'Lead',
-  source: lead.Lead_Source_Term || '-',
-  status: lead.Status || 'Pending',
-  priority: lead.Priority || 'Standard',
-  score: Number(lead.LeadRatings || 0),
-  action: lead.AIRecommendation || lead.Comment || 'Run AI analysis for recommended next action.',
-  createdOn: lead.CreatedOn,
-  lastActivityDate: lead.LastActivityDate,
-  isActive: lead.IsActive,
-  raw: lead,
-});
+const getNurtureStatus = (createdOn, lastActivityDate) => {
+  if (!createdOn) return { isStale: false, needsNurture: false };
+  
+  const now = new Date();
+  const created = new Date(createdOn);
+  const activity = new Date(lastActivityDate || createdOn);
+  
+  const diffCreatedMin = (now - created) / (1000 * 60);
+  const diffActivityMin = (now - activity) / (1000 * 60);
+  
+  return {
+    isStale: diffCreatedMin >= 1,
+    needsNurture: diffActivityMin >= 1,
+    ageMin: Math.floor(diffCreatedMin),
+    inactiveMin: Math.floor(diffActivityMin)
+  };
+};
+
+const normalizeLead = (lead, index) => {
+  const nurture = getNurtureStatus(lead.CreatedOn, lead.LastActivityDate);
+  const inputDetails = lead.InputDetails || {};
+  const preferredMethod = inputDetails.contactMethod || (lead.Email ? 'Email' : 'Phone');
+  
+  return {
+    id: lead.LeadID || lead._id || `TEMP-${index + 1}`,
+    leadNo: lead.LeadNo || `LEAD-${index + 1}`,
+    companyName: lead.CompanyName || 'Unnamed Company',
+    contactName: [lead.FirstName, lead.LastName].filter(Boolean).join(' ') || 'Unnamed Contact',
+    email: lead.Email || '-',
+    mobileNo: lead.MobileNo || lead.TelephoneNo || '-',
+    city: [lead.City, lead.State, lead.Country].filter(Boolean).join(', ') || '-',
+    type: lead.GroupType || lead.Lead_Source_Term || 'Lead',
+    source: lead.Lead_Source_Term || '-',
+    status: lead.Status || 'Pending',
+    priority: lead.Priority || 'Standard',
+    score: Number(lead.LeadRatings || 0),
+    action: lead.AIRecommendation || lead.Comment || 'Run AI analysis for recommended next action.',
+    createdOn: lead.CreatedOn,
+    lastActivityDate: lead.LastActivityDate,
+    nurture,
+    preferredMethod,
+    isActive: lead.IsActive,
+    raw: lead,
+  };
+};
 
 const getScoreBadge = (score) => {
   if (score >= 82) {
@@ -171,7 +201,7 @@ const LeadDetailSection = ({ title, fields }) => {
   );
 };
 
-const LeadDetailView = ({ 
+const EmailModal = ({ 
   lead, 
   onClose, 
   onAnalyze, 
@@ -224,19 +254,16 @@ const LeadDetailView = ({
       const firstOffer = availableOffers[0].value;
       setSelectedOffer(firstOffer);
       onCustomOfferChange(firstOffer);
-      setTimeout(() => onGenerateEmail(), 50);
     } else if (lead.raw.AppliedOffer?.offerText && !selectedOffer) {
       setSelectedOffer(lead.raw.AppliedOffer.offerText);
     }
-  }, [lead.raw.AppliedOffer, selectedOffer, availableOffers, onCustomOfferChange, onGenerateEmail]);
+  }, [lead.raw.AppliedOffer, selectedOffer, availableOffers, onCustomOfferChange]);
 
   if (!lead) return null;
 
   const raw = lead.raw;
   const inputDetails = raw.InputDetails || {};
   const scoreBreakdown = raw.AIScoreBreakdown || {};
-  const aiSignals = raw.AISignals || [];
-  const aiRisks = raw.AIRisks || [];
   const contactFields = [
     { label: 'Lead No', value: raw.LeadNo },
     { label: 'Title', value: raw.Title },
@@ -349,127 +376,94 @@ const LeadDetailView = ({
             <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">{lead.action}</p>
           </div>
 
-          {(generatingEmail || generatedEmail) && (
-            <section className="animate-in fade-in slide-in-from-top-4 duration-500">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 flex items-center gap-2">
-                <Mail size={14} />
-                AI Generated Email Draft
-              </h3>
-              <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
-                    Configured Hotel
-                  </label>
-                  <select
-                    value={selectedHotelId}
-                    onChange={(e) => {
-                      const newId = e.target.value;
-                      setSelectedHotelId(newId);
-                      setSelectedOffer('');
-                      onHotelChange(newId);
-                    }}
-                    className="w-full p-2.5 rounded-lg border border-slate-200 dark:border-dark-700 bg-white dark:bg-dark-800 text-sm text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all outline-none"
-                  >
-                    <option value="">Select a hotel...</option>
-                    {allHotelOffers.map(hotel => (
-                      <option key={hotel.HotelOfferID} value={hotel.HotelOfferID}>
-                        {hotel.HotelName} ({hotel.HotelCode})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
-                    Select Offer
-                  </label>
-                  <select
-                    value={selectedOffer}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setSelectedOffer(val);
-                      onCustomOfferChange(val);
-                      setTimeout(() => onGenerateEmail(), 50);
-                    }}
-                    disabled={!selectedHotelId}
-                    className="w-full p-2.5 rounded-lg border border-slate-200 dark:border-dark-700 bg-white dark:bg-dark-800 text-sm text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all outline-none disabled:opacity-50 disabled:bg-slate-50 dark:disabled:bg-dark-900/50"
-                  >
-                    <option value="">Select an offer...</option>
-                    {availableOffers.map((off, idx) => (
-                      <option key={idx} value={off.value}>{off.label}</option>
-                    ))}
-                  </select>
-                </div>
+          <section className="animate-in fade-in slide-in-from-top-4 duration-500">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 flex items-center gap-2">
+              <Mail size={14} />
+              AI Generated Email Draft
+            </h3>
+            <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
+                  Configured Hotel
+                </label>
+                <select
+                  value={selectedHotelId}
+                  onChange={(e) => {
+                    const newId = e.target.value;
+                    setSelectedHotelId(newId);
+                    setSelectedOffer('');
+                    onHotelChange(newId);
+                  }}
+                  className="w-full p-2.5 rounded-lg border border-slate-200 dark:border-dark-700 bg-white dark:bg-dark-800 text-sm text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all outline-none"
+                >
+                  <option value="">Select a hotel...</option>
+                  {allHotelOffers.map(hotel => (
+                    <option key={hotel.HotelOfferID} value={hotel.HotelOfferID}>
+                      {hotel.HotelName} ({hotel.HotelCode})
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              {selectedOffer && (
-                <div className="mb-4 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20">
-                  <p className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase mb-1">Applied Offer:</p>
-                  <p className="text-sm text-emerald-700 dark:text-emerald-400 italic">"{selectedOffer}"</p>
-                </div>
-              )}
-              {generatingEmail ? (
-                <div className="rounded-lg border border-slate-200 dark:border-dark-700 bg-slate-50 dark:bg-dark-800/50 p-6 space-y-4">
-                  <div className="h-4 bg-slate-200 dark:bg-dark-700 rounded w-1/4 animate-pulse"></div>
-                  <div className="space-y-3">
-                    <div className="h-3 bg-slate-200 dark:bg-dark-700 rounded w-full animate-pulse"></div>
-                    <div className="h-3 bg-slate-200 dark:bg-dark-700 rounded w-5/6 animate-pulse"></div>
-                    <div className="h-3 bg-slate-200 dark:bg-dark-700 rounded w-full animate-pulse"></div>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-lg border border-slate-200 dark:border-dark-700 bg-slate-50 dark:bg-dark-800/50 p-4">
-                  <textarea
-                    value={generatedEmail}
-                    onChange={(e) => onEmailChange(e.target.value)}
-                    className="w-full h-48 p-3 rounded-lg border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-900 text-sm text-slate-700 dark:text-slate-300 resize-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    placeholder="Edit the AI-generated email draft..."
-                  />
-                  <div className="mt-3 flex justify-end">
-                    <button
-                      onClick={() => onSendEmail(generatedEmail, lead.email)}
-                      disabled={sendingEmail || !generatedEmail}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95 transition-all disabled:opacity-50 text-sm font-bold shadow-md shadow-emerald-500/20"
-                    >
-                      {sendingEmail ? 'Sending...' : 'Send to Lead'}
-                      <Send size={14} />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </section>
-          )}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
+                  Select Offer
+                </label>
+                <select
+                  value={selectedOffer}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSelectedOffer(val);
+                    onCustomOfferChange(val);
+                    onGenerateEmail(val);
+                  }}
+                  disabled={!selectedHotelId}
+                  className="w-full p-2.5 rounded-lg border border-slate-200 dark:border-dark-700 bg-white dark:bg-dark-800 text-sm text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all outline-none disabled:opacity-50 disabled:bg-slate-50 dark:disabled:bg-dark-900/50"
+                >
+                  <option value="">Select an offer...</option>
+                  {availableOffers.map((off, idx) => (
+                    <option key={idx} value={off.value}>{off.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-          {(generatingSms || generatedSms) && (
-            <section className="animate-in fade-in slide-in-from-top-4 duration-500 delay-150">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 flex items-center gap-2">
-                <MessageSquare size={14} />
-                AI Generated SMS
-              </h3>
-              {generatingSms ? (
-                <div className="rounded-lg border border-slate-200 dark:border-dark-700 bg-slate-50 dark:bg-dark-800/50 p-4 space-y-2">
+            {selectedOffer && (
+              <div className="mb-4 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20">
+                <p className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase mb-1">Applied Offer:</p>
+                <p className="text-sm text-emerald-700 dark:text-emerald-400 italic">"{selectedOffer}"</p>
+              </div>
+            )}
+            {generatingEmail ? (
+              <div className="rounded-lg border border-slate-200 dark:border-dark-700 bg-slate-50 dark:bg-dark-800/50 p-6 space-y-4">
+                <div className="h-4 bg-slate-200 dark:bg-dark-700 rounded w-1/4 animate-pulse"></div>
+                <div className="space-y-3">
                   <div className="h-3 bg-slate-200 dark:bg-dark-700 rounded w-full animate-pulse"></div>
-                  <div className="h-3 bg-slate-200 dark:bg-dark-700 rounded w-4/5 animate-pulse"></div>
+                  <div className="h-3 bg-slate-200 dark:bg-dark-700 rounded w-5/6 animate-pulse"></div>
+                  <div className="h-3 bg-slate-200 dark:bg-dark-700 rounded w-full animate-pulse"></div>
                 </div>
-              ) : (
-                <div className="rounded-lg border border-slate-200 dark:border-dark-700 bg-slate-50 dark:bg-dark-800/50 p-4 relative group/sms">
-                  <p className="text-sm text-slate-700 dark:text-slate-300 pr-10">{generatedSms}</p>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-slate-200 dark:border-dark-700 bg-slate-50 dark:bg-dark-800/50 p-4">
+                <textarea
+                  value={generatedEmail}
+                  onChange={(e) => onEmailChange(e.target.value)}
+                  className="w-full h-48 p-3 rounded-lg border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-900 text-sm text-slate-700 dark:text-slate-300 resize-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  placeholder="Edit the AI-generated email draft..."
+                />
+                <div className="mt-3 flex justify-end">
                   <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(generatedSms);
-                      // Simple feedback could be added here if needed
-                    }}
-                    className="absolute top-4 right-4 p-2 rounded-md bg-white dark:bg-dark-800 border border-slate-200 dark:border-dark-700 text-slate-400 hover:text-primary-600 transition-colors shadow-sm"
-                    title="Copy SMS"
+                    onClick={() => onSendEmail(generatedEmail, lead.email)}
+                    disabled={sendingEmail || !generatedEmail}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95 transition-all disabled:opacity-50 text-sm font-bold shadow-md shadow-emerald-500/20"
                   >
-                    <Copy size={14} />
+                    {sendingEmail ? 'Sending...' : 'Send to Lead'}
+                    <Send size={14} />
                   </button>
                 </div>
-              )}
-            </section>
-          )}
-
-
+              </div>
+            )}
+          </section>
 
           <section className="rounded-lg border border-slate-200 dark:border-dark-700 bg-white dark:bg-dark-900 overflow-hidden">
             <button
@@ -509,7 +503,6 @@ const LeadDetailView = ({
             )}
           </section>
 
-
           <LeadDetailSection title="Contact Details" fields={allDetailsFields} />
 
           <section>
@@ -530,6 +523,96 @@ const LeadDetailView = ({
   );
 };
 
+const PhoneModal = ({ lead, onClose }) => {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+      <div className="bg-white dark:bg-dark-900 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 dark:border-dark-700">
+        <div className="p-8 text-center space-y-6">
+          <div className="w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mx-auto">
+            <Phone size={36} className="animate-bounce" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{lead.contactName}</h2>
+            <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">{lead.companyName}</p>
+          </div>
+          <div className="py-4 px-6 rounded-2xl bg-slate-50 dark:bg-dark-800 border border-slate-100 dark:border-dark-700">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Direct Line</p>
+            <p className="text-3xl font-black text-primary-600 dark:text-primary-400 tracking-tight">{lead.mobileNo}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <a 
+              href={`tel:${lead.mobileNo}`} 
+              className="flex items-center justify-center gap-2 p-4 rounded-2xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 transition-all active:scale-95 shadow-lg shadow-emerald-500/20"
+            >
+              <Phone size={18} /> Call Now
+            </a>
+            <button 
+              onClick={onClose}
+              className="flex items-center justify-center gap-2 p-4 rounded-2xl bg-slate-100 dark:bg-dark-800 text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-200 dark:hover:bg-dark-700 transition-all active:scale-95"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const TextModal = ({ lead, onClose, generatedSms, generatingSms }) => {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+      <div className="bg-white dark:bg-dark-900 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 dark:border-dark-700">
+        <div className="p-6 border-b border-slate-100 dark:border-dark-800 flex items-center justify-between bg-indigo-50/50 dark:bg-indigo-500/5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+              <Smartphone size={20} />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">Text Follow-up</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">{lead.mobileNo}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-200 dark:hover:bg-dark-800 text-slate-400 transition-colors"><X size={20} /></button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">AI Suggested Message</label>
+            <div className="relative group">
+              <div className="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/50 text-slate-700 dark:text-slate-200 text-sm leading-relaxed italic">
+                {generatingSms ? 'Generating AI message...' : generatedSms}
+              </div>
+              {!generatingSms && (
+                <button 
+                  onClick={() => navigator.clipboard.writeText(generatedSms)}
+                  className="absolute top-2 right-2 p-2 rounded-lg bg-white dark:bg-dark-800 border border-indigo-100 dark:border-indigo-800 text-indigo-500 hover:bg-indigo-50 shadow-sm transition-all active:scale-90"
+                  title="Copy to clipboard"
+                >
+                  <Copy size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+          
+          <div className="bg-amber-50 dark:bg-amber-900/20 p-3 rounded-xl border border-amber-100 dark:border-amber-800/50 flex gap-3">
+            <AlertCircle size={18} className="text-amber-500 shrink-0" />
+            <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-tight font-medium">
+              Standard messaging rates apply. You can copy the message above and send it via your corporate mobile device.
+            </p>
+          </div>
+        </div>
+
+        <div className="p-4 bg-slate-50 dark:bg-dark-800/50 border-t border-slate-100 dark:border-dark-800 flex justify-end gap-3">
+          <button onClick={onClose} className="w-full py-3 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 active:scale-[0.98] transition-all">
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const LeadAnalyzer = () => {
   const navigate = useNavigate();
   const [leads, setLeads] = useState([]);
@@ -537,7 +620,7 @@ const LeadAnalyzer = () => {
   const [analyzingId, setAnalyzingId] = useState(null);
   const [selectedLeadId, setSelectedLeadId] = useState(null);
   const [selectedLeadDetail, setSelectedLeadDetail] = useState(null);
-  const [showModal, setShowModal] = useState(false);
+  const [activeModal, setActiveModal] = useState(null); // 'email', 'phone', 'text'
   const [generatedEmail, setGeneratedEmail] = useState('');
   const [customOffer, setCustomOffer] = useState('');
   const [generatingEmail, setGeneratingEmail] = useState(false);
@@ -587,17 +670,21 @@ const LeadAnalyzer = () => {
     [leads, selectedLeadDetail, selectedLeadId],
   );
 
-  const handleRowClick = (leadId, autoGen = false) => {
+  const handleRowClick = (leadId, modalType = 'email') => {
     setSelectedLeadId(leadId);
-    setShowModal(true);
+    setActiveModal(modalType);
     setGeneratedEmail('');
     setCustomOffer('');
     setGeneratedSms('');
-    setShouldAutoGenerate(autoGen);
+    
+    // Auto-trigger generation for email/text
+    if (modalType === 'email' || modalType === 'text') {
+      setShouldAutoGenerate(true);
+    }
   };
 
   const handleCloseModal = () => {
-    setShowModal(false);
+    setActiveModal(null);
     setSelectedLeadId(null);
     setSelectedLeadDetail(null);
     setGeneratedEmail('');
@@ -651,14 +738,18 @@ const LeadAnalyzer = () => {
     loadLeadDetail();
   }, [selectedLeadId]);
 
-  // Handle auto-generation of email
+  // Handle auto-generation
   useEffect(() => {
-    if (showModal && selectedLead && shouldAutoGenerate && !generatedEmail && !generatingEmail) {
-      generateEmail();
-      generateSms();
-      setShouldAutoGenerate(false);
+    if (activeModal && selectedLead && shouldAutoGenerate) {
+      if (activeModal === 'email' && !generatedEmail && !generatingEmail) {
+        generateEmail();
+        setShouldAutoGenerate(false);
+      } else if (activeModal === 'text' && !generatedSms && !generatingSms) {
+        generateSms();
+        setShouldAutoGenerate(false);
+      }
     }
-  }, [showModal, selectedLead, shouldAutoGenerate, generatedEmail, generatingEmail]);
+  }, [activeModal, selectedLead, shouldAutoGenerate, generatedEmail, generatingEmail, generatedSms, generatingSms]);
 
   const runAnalysis = async (id) => {
     setAnalyzingId(id);
@@ -697,15 +788,16 @@ const LeadAnalyzer = () => {
     }
   };
 
-  const generateEmail = async () => {
+  const generateEmail = async (offerOverride) => {
     if (!selectedLead) return;
+    const activeOffer = offerOverride !== undefined ? offerOverride : customOffer;
     setGeneratingEmail(true);
     try {
       const isFollowUp = selectedLead.status === 'Follow-up';
       const endpoint = isFollowUp ? '/communication/generate-follow-up' : '/communication/smart-reply';
       const payload = isFollowUp 
-        ? { leadId: selectedLead.id, leadData: selectedLead.raw, customOffer }
-        : { leadData: selectedLead.raw, emailContext: 'Initial outreach for event planning inquiry', customOffer };
+        ? { leadId: selectedLead.id, leadData: selectedLead.raw, customOffer: activeOffer }
+        : { leadData: selectedLead.raw, emailContext: 'Initial outreach for event planning inquiry', customOffer: activeOffer };
 
       const response = await api.post(endpoint, payload);
       setGeneratedEmail(response.data.draft);
@@ -804,8 +896,57 @@ const LeadAnalyzer = () => {
       header: 'Company',
       cell: ({ row }) => (
         <div>
-          <p className="font-bold text-slate-900 dark:text-white">{row.original.companyName}</p>
+          <div className="flex items-center gap-2 mb-0.5">
+            <p className="font-bold text-slate-900 dark:text-white leading-none">{row.original.companyName}</p>
+            {row.original.nurture.needsNurture && (
+              <span 
+                className="flex h-2 w-2 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]" 
+                title={`Inactive for ${row.original.nurture.inactiveMin} minutes`}
+              ></span>
+            )}
+            {row.original.nurture.isStale && (
+              <span 
+                className="flex h-2 w-2 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]" 
+                title={`Generated ${row.original.nurture.ageMin} minutes ago`}
+              ></span>
+            )}
+            <div className="flex items-center gap-1.5 ml-1 border-l border-slate-200 dark:border-dark-700 pl-2">
+               {row.original.email !== '-' && (
+                 <Mail 
+                   size={12} 
+                   className={row.original.preferredMethod === 'Email' ? 'text-primary-500' : 'text-slate-300 dark:text-slate-600'} 
+                   title="Email available"
+                 />
+               )}
+               {row.original.mobileNo !== '-' && (
+                 <>
+                   <Phone 
+                     size={12} 
+                     className={row.original.preferredMethod === 'Phone' ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'} 
+                     title="Phone available"
+                   />
+                   <Smartphone 
+                     size={12} 
+                     className={row.original.preferredMethod === 'Text' ? 'text-blue-500' : 'text-slate-300 dark:text-slate-600'} 
+                     title="Text/SMS available"
+                   />
+                 </>
+               )}
+            </div>
+          </div>
           <p className="text-xs text-slate-500 dark:text-slate-400">{row.original.contactName}</p>
+          <div className="flex gap-2 mt-1.5">
+             {row.original.nurture.needsNurture && (
+               <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-tighter bg-amber-50 text-amber-600 border border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20">
+                 Awaiting Action
+               </span>
+             )}
+             {row.original.nurture.isStale && (
+               <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-tighter bg-rose-50 text-rose-600 border border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20">
+                 Stale Lead
+               </span>
+             )}
+          </div>
         </div>
       ),
     },
@@ -879,7 +1020,7 @@ const LeadAnalyzer = () => {
       header: 'Actions',
       enableSorting: false,
       cell: ({ row }) => (
-        <div className="flex items-center justify-end gap-2">
+        <div className="flex items-center justify-end gap-1.5">
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -890,16 +1031,43 @@ const LeadAnalyzer = () => {
           >
             <Edit2 size={16} />
           </button>
-          {['Pending', 'Follow-up'].includes(row.original.status) && (
+          
+          {row.original.preferredMethod === 'Email' && row.original.email !== '-' && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                handleRowClick(row.original.id, true);
+                handleRowClick(row.original.id, 'email');
               }}
-              className="w-8 h-8 inline-flex items-center justify-center rounded-lg bg-primary-600 text-white hover:bg-primary-700"
-              title={row.original.status === 'Follow-up' ? 'Generate follow-up email' : 'Generate contact email'}
+              className="w-8 h-8 inline-flex items-center justify-center rounded-lg bg-primary-600 text-white hover:bg-primary-700 shadow-sm shadow-primary-500/20 active:scale-95"
+              title="Email Follow-up"
             >
-              <Mail size={16} />
+              <Mail size={14} />
+            </button>
+          )}
+
+          {row.original.preferredMethod === 'Phone' && row.original.mobileNo !== '-' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRowClick(row.original.id, 'phone');
+              }}
+              className="w-8 h-8 inline-flex items-center justify-center rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm shadow-emerald-500/20 active:scale-95"
+              title="Phone Call"
+            >
+              <Phone size={14} />
+            </button>
+          )}
+
+          {row.original.preferredMethod === 'Text' && row.original.mobileNo !== '-' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRowClick(row.original.id, 'text');
+              }}
+              className="w-8 h-8 inline-flex items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm shadow-indigo-500/20 active:scale-95"
+              title="Text Follow-up"
+            >
+              <Smartphone size={14} />
             </button>
           )}
         </div>
@@ -991,6 +1159,9 @@ const LeadAnalyzer = () => {
                 </span>
                 <span className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white dark:bg-dark-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-dark-600 flex items-center gap-1 shadow-sm">
                   <AlertCircle size={14} className="text-rose-500" /> {atRiskCount} At Risk (Cold)
+                </span>
+                <span className="px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 flex items-center gap-1 shadow-sm">
+                  <TrendingUp size={14} /> {leads.filter(l => l.nurture.isStale || l.nurture.needsNurture).length} Nurturing Alerts
                 </span>
               </div>
             </div>
@@ -1111,7 +1282,13 @@ const LeadAnalyzer = () => {
                   table.getRowModel().rows.map((row) => (
                     <tr
                       key={row.id}
-                      className="hover:bg-slate-50/70 dark:hover:bg-dark-800/30 transition-colors"
+                      className={`transition-colors border-l-4 ${
+                        row.original.nurture.isStale 
+                          ? 'bg-rose-50/30 dark:bg-rose-500/5 hover:bg-rose-50/50 dark:hover:bg-rose-500/10 border-l-rose-500' 
+                          : row.original.nurture.needsNurture
+                            ? 'bg-amber-50/30 dark:bg-amber-500/5 hover:bg-amber-50/50 dark:hover:bg-amber-500/10 border-l-amber-500'
+                            : 'hover:bg-slate-50/70 dark:hover:bg-dark-800/30 border-l-transparent'
+                      }`}
                     >
                       {row.getVisibleCells().map((cell) => (
                         <td key={cell.id} className="p-4 align-top text-sm text-slate-700 dark:text-slate-300">
@@ -1179,25 +1356,37 @@ const LeadAnalyzer = () => {
           </div>
         </div>
 
-        {showModal && selectedLead && (
-          <LeadDetailView
+        {activeModal === 'email' && selectedLead && (
+          <EmailModal
             lead={selectedLead}
             onClose={handleCloseModal}
-            onAnalyze={runAnalysis}
-            analyzingId={analyzingId}
-            onGenerateEmail={generateEmail}
-            generatingEmail={generatingEmail}
-            generatedEmail={generatedEmail}
-            customOffer={customOffer}
-            onCustomOfferChange={setCustomOffer}
-            generatingSms={generatingSms}
-            generatedSms={generatedSms}
-            onSendEmail={handleSendEmail}
-            sendingEmail={sendingEmail}
-            onEmailChange={handleEmailChange}
             hotelOffer={currentHotelOffer}
             allHotelOffers={allHotelOffers}
             onHotelChange={handleHotelChange}
+            onGenerateEmail={generateEmail}
+            generatingEmail={generatingEmail}
+            generatedEmail={generatedEmail}
+            onEmailChange={handleEmailChange}
+            onSendEmail={handleSendEmail}
+            sendingEmail={sendingEmail}
+            customOffer={customOffer}
+            onCustomOfferChange={setCustomOffer}
+          />
+        )}
+
+        {activeModal === 'phone' && selectedLead && (
+          <PhoneModal
+            lead={selectedLead}
+            onClose={handleCloseModal}
+          />
+        )}
+
+        {activeModal === 'text' && selectedLead && (
+          <TextModal
+            lead={selectedLead}
+            onClose={handleCloseModal}
+            generatedSms={generatedSms}
+            generatingSms={generatingSms}
           />
         )}
       </div>

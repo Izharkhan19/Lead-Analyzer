@@ -423,12 +423,12 @@ const LeadForm = ({ isOpen, onClose, leadId: leadIdProp }) => {
                   </Field>
                   <Field label="Last Name">
                     <InputWrapper icon={User}>
-                      <input type="text" name="lastName" value={formData.lastName} onChange={handleChange} placeholder="Connor" className="input-field pl-10 bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700" />
+                      <input type="text" name="lastName" value={formData.lastName} onChange={handleChange} required placeholder="Connor" className="input-field pl-10 bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700" />
                     </InputWrapper>
                   </Field>
                   <Field label="Company Name">
                     <InputWrapper icon={Building2}>
-                      <input type="text" name="companyName" value={formData.companyName} onChange={handleChange} placeholder="Cyberdyne Systems" className="input-field pl-10 bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700" />
+                      <input type="text" name="companyName" value={formData.companyName} onChange={handleChange} required placeholder="Cyberdyne Systems" className="input-field pl-10 bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700" />
                     </InputWrapper>
                   </Field>
                   <Field label="Email Address">
@@ -438,7 +438,7 @@ const LeadForm = ({ isOpen, onClose, leadId: leadIdProp }) => {
                   </Field>
                   <Field label="Mobile Number">
                     <InputWrapper icon={Phone}>
-                      <input type="tel" name="mobileNumber" value={formData.mobileNumber} onChange={handleChange} placeholder="+1 (555) 000-0000" className="input-field pl-10 bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700" />
+                      <input type="tel" name="mobileNumber" value={formData.mobileNumber} onChange={handleChange} required placeholder="+1 (555) 000-0000" className="input-field pl-10 bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700" />
                     </InputWrapper>
                   </Field>
                   <Field label="Telephone Number">
@@ -457,7 +457,7 @@ const LeadForm = ({ isOpen, onClose, leadId: leadIdProp }) => {
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                   <Field label="Group Type">
-                    <select name="groupType" value={formData.groupType} onChange={handleChange} className="input-field bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700">
+                    <select name="groupType" value={formData.groupType} onChange={handleChange} required className="input-field bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700">
                       <option value="">Select type...</option>
                       <option value="Corporate">Corporate</option>
                       <option value="Association">Association</option>
@@ -471,6 +471,7 @@ const LeadForm = ({ isOpen, onClose, leadId: leadIdProp }) => {
                         name="selectedHotelOfferId"
                         value={formData.selectedHotelOfferId}
                         onChange={handleChange}
+                        required
                         className="input-field pl-10 bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700"
                       >
                         <option value="">{loadingHotelOffers ? 'Loading hotels...' : 'Select hotel...'}</option>
@@ -489,12 +490,12 @@ const LeadForm = ({ isOpen, onClose, leadId: leadIdProp }) => {
                   </Field>
                   <Field label="Guest Count">
                     <InputWrapper icon={Users}>
-                      <input type="number" name="guestCount" value={formData.guestCount} onChange={handleChange} min="1" placeholder="150" className="input-field pl-10 bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700" />
+                      <input type="number" name="guestCount" value={formData.guestCount} onChange={handleChange} required min="1" placeholder="150" className="input-field pl-10 bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700" />
                     </InputWrapper>
                   </Field>
                   <Field label="Number of Rooms">
                     <InputWrapper icon={Hash}>
-                      <input type="number" name="roomsCount" value={formData.roomsCount} onChange={handleChange} min="0" placeholder="50" className="input-field pl-10 bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700" />
+                      <input type="number" name="roomsCount" value={formData.roomsCount} onChange={handleChange} required min="0" placeholder="50" className="input-field pl-10 bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700" />
                     </InputWrapper>
                   </Field>
                   <Field label="Budget Range">
@@ -519,10 +520,10 @@ const LeadForm = ({ isOpen, onClose, leadId: leadIdProp }) => {
                     </InputWrapper>
                   </Field>
                   <Field label="Start Date">
-                    <input type="date" name="startDate" value={formData.startDate} onChange={handleChange} className="input-field bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700 text-slate-500 dark:text-slate-400" />
+                    <input type="date" name="startDate" value={formData.startDate} onChange={handleChange} required className="input-field bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700 text-slate-500 dark:text-slate-400" />
                   </Field>
                   <Field label="End Date">
-                    <input type="date" name="endDate" value={formData.endDate} onChange={handleChange} className="input-field bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700 text-slate-500 dark:text-slate-400" />
+                    <input type="date" name="endDate" value={formData.endDate} onChange={handleChange} required className="input-field bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700 text-slate-500 dark:text-slate-400" />
                   </Field>
                 </div>
                 {selectedHotelOffer && (
@@ -578,7 +579,7 @@ const LeadForm = ({ isOpen, onClose, leadId: leadIdProp }) => {
                     </select>
                   </Field>
                   <Field label="Priority">
-                    <select name="mainPriority" value={formData.mainPriority} onChange={handleChange} className="input-field bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700">
+                    <select name="mainPriority" value={formData.mainPriority} onChange={handleChange} required className="input-field bg-white dark:bg-dark-800 border-slate-200 dark:border-dark-700">
                       <option value="">Select priority...</option>
                       <option value="Hot">Hot</option>
                       <option value="Warm">Warm</option>
