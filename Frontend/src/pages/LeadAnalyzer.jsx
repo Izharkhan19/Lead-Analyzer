@@ -45,51 +45,51 @@ import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 
 const demoLeads = [
-  {
-    LeadID: 'DEMO-10001',
-    LeadNo: 'LEAD-10001',
-    CompanyName: 'TechVision Global',
-    FirstName: 'Sarah',
-    LastName: 'Connor',
-    MobileNo: '+1 (555) 010-1001',
-    Email: 'sarah@techvision.example',
-    City: 'Austin',
-    State: 'Texas',
-    Country: 'USA',
-    Lead_Status_Term: 'Analyzing',
-    Status: 'Pending',
-    Lead_Source_Term: 'RFP',
-    LeadRatings: 85,
-    Priority: 'High',
-    Comment: 'Analyzing engagement patterns and proposal fit.',
-    GroupType: 'Corporate',
-    SubmittedBy: 'Website',
-    CreatedOn: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
-    LastActivityDate: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
-    IsActive: true,
-  },
-  {
-    LeadID: 'DEMO-10002',
-    LeadNo: 'LEAD-10002',
-    CompanyName: 'Summit Group',
-    FirstName: 'Mike',
-    LastName: 'Johnson',
-    MobileNo: '+1 (555) 010-1002',
-    Email: 'mike@summit.example',
-    City: 'Denver',
-    State: 'Colorado',
-    Country: 'USA',
-    Lead_Status_Term: 'Scored',
-    Status: 'Follow-up',
-    Lead_Source_Term: 'Group Deal',
-    LeadRatings: 62,
-    Priority: 'Medium',
-    Comment: 'Send updated pricing sheet.',
-    GroupType: 'Association',
-    SubmittedBy: 'Email',
-    CreatedOn: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-    IsActive: true,
-  },
+  // {
+  //   LeadID: 'DEMO-10001',
+  //   LeadNo: 'LEAD-10001',
+  //   CompanyName: 'TechVision Global',
+  //   FirstName: 'Sarah',
+  //   LastName: 'Connor',
+  //   MobileNo: '+1 (555) 010-1001',
+  //   Email: 'sarah@techvision.example',
+  //   City: 'Austin',
+  //   State: 'Texas',
+  //   Country: 'USA',
+  //   Lead_Status_Term: 'Analyzing',
+  //   Status: 'Pending',
+  //   Lead_Source_Term: 'RFP',
+  //   LeadRatings: 85,
+  //   Priority: 'High',
+  //   Comment: 'Analyzing engagement patterns and proposal fit.',
+  //   GroupType: 'Corporate',
+  //   SubmittedBy: 'Website',
+  //   CreatedOn: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+  //   LastActivityDate: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+  //   IsActive: true,
+  // },
+  // {
+  //   LeadID: 'DEMO-10002',
+  //   LeadNo: 'LEAD-10002',
+  //   CompanyName: 'Summit Group',
+  //   FirstName: 'Mike',
+  //   LastName: 'Johnson',
+  //   MobileNo: '+1 (555) 010-1002',
+  //   Email: 'mike@summit.example',
+  //   City: 'Denver',
+  //   State: 'Colorado',
+  //   Country: 'USA',
+  //   Lead_Status_Term: 'Scored',
+  //   Status: 'Follow-up',
+  //   Lead_Source_Term: 'Group Deal',
+  //   LeadRatings: 62,
+  //   Priority: 'Medium',
+  //   Comment: 'Send updated pricing sheet.',
+  //   GroupType: 'Association',
+  //   SubmittedBy: 'Email',
+  //   CreatedOn: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+  //   IsActive: true,
+  // },
 ];
 
 const formatDate = (value) => {
@@ -627,6 +627,28 @@ const TextModal = ({ lead, onClose, generatedSms, generatingSms }) => {
     </div>
   );
 };
+
+const LeadListSkeleton = ({ columns }) => (
+  <>
+    {[1, 2, 3, 4, 5, 6, 7, 8].map((row) => (
+      <tr key={row} className="border-l-4 border-l-transparent animate-pulse">
+        {Array.from({ length: columns }).map((_, column) => (
+          <td key={`${row}-${column}`} className="p-4 align-top">
+            <div
+              className={`h-4 rounded bg-slate-200 dark:bg-dark-700 ${
+                column === 0 ? 'w-28' :
+                column === 1 ? 'w-44' :
+                column === 2 ? 'w-32' :
+                column === columns - 1 ? 'w-24 ml-auto' :
+                'w-full min-w-16'
+              }`}
+            ></div>
+          </td>
+        ))}
+      </tr>
+    ))}
+  </>
+);
 
 const LeadAnalyzer = () => {
   const navigate = useNavigate();
@@ -1291,11 +1313,7 @@ const LeadAnalyzer = () => {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-dark-700/50">
                 {loading ? (
-                  <tr>
-                    <td colSpan={table.getVisibleLeafColumns().length} className="p-8 text-center text-sm text-slate-500">
-                      Loading leads...
-                    </td>
-                  </tr>
+                  <LeadListSkeleton columns={table.getVisibleLeafColumns().length} />
                 ) : table.getRowModel().rows.length ? (
                   table.getRowModel().rows.map((row) => (
                     <tr
@@ -1317,7 +1335,7 @@ const LeadAnalyzer = () => {
                 ) : (
                   <tr>
                     <td colSpan={table.getVisibleLeafColumns().length} className="p-8 text-center text-sm text-slate-500">
-                      No leads match the current filters.
+                      No leads found.
                     </td>
                   </tr>
                 )}

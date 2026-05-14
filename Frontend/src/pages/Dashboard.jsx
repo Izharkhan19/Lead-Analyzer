@@ -56,6 +56,66 @@ const StatCard = ({ title, value, change, icon: Icon, isPositive, suffix = "", d
   </div>
 );
 
+const DashboardSkeleton = () => (
+  <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-8">
+      <div className="space-y-3 w-full max-w-md">
+        <div className="h-8 w-64 rounded-lg bg-slate-200 dark:bg-dark-700 animate-pulse"></div>
+        <div className="h-4 w-full rounded bg-slate-200 dark:bg-dark-700 animate-pulse"></div>
+      </div>
+      <div className="h-10 w-40 rounded-lg bg-slate-200 dark:bg-dark-700 animate-pulse"></div>
+    </div>
+
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      {[1, 2, 3].map((item) => (
+        <div key={item} className="rounded-xl bg-white dark:bg-dark-900 border border-slate-200 dark:border-dark-700 p-6 shadow-sm animate-pulse">
+          <div className="flex justify-between items-start mb-6">
+            <div className="space-y-3">
+              <div className="h-4 w-24 rounded bg-slate-200 dark:bg-dark-700"></div>
+              <div className="h-8 w-20 rounded bg-slate-200 dark:bg-dark-700"></div>
+            </div>
+            <div className="h-12 w-12 rounded-xl bg-slate-200 dark:bg-dark-700"></div>
+          </div>
+          <div className="h-4 w-36 rounded bg-slate-200 dark:bg-dark-700"></div>
+        </div>
+      ))}
+    </div>
+
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="lg:col-span-2 glass-panel p-6 animate-pulse">
+        <div className="flex justify-between items-center mb-8">
+          <div className="h-6 w-56 rounded bg-slate-200 dark:bg-dark-700"></div>
+          <div className="h-4 w-32 rounded bg-slate-200 dark:bg-dark-700"></div>
+        </div>
+        <div className="h-64 flex items-end gap-4">
+          {[45, 70, 52, 86, 62, 75, 58].map((height, index) => (
+            <div key={index} className="flex-1 flex items-end gap-1.5">
+              <div className="w-2 rounded-t bg-slate-200 dark:bg-dark-700" style={{ height: `${Math.max(height - 18, 16)}%` }}></div>
+              <div className="w-full max-w-[28px] rounded-t bg-slate-200 dark:bg-dark-700" style={{ height: `${height}%` }}></div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="glass-panel p-6 animate-pulse">
+        <div className="h-6 w-44 rounded bg-slate-200 dark:bg-dark-700 mb-6"></div>
+        <div className="space-y-4">
+          {[1, 2, 3, 4].map((item) => (
+            <div key={item} className="rounded-xl border border-slate-200 dark:border-dark-700 p-4 space-y-3">
+              <div className="flex justify-between gap-3">
+                <div className="h-4 w-32 rounded bg-slate-200 dark:bg-dark-700"></div>
+                <div className="h-6 w-14 rounded-md bg-slate-200 dark:bg-dark-700"></div>
+              </div>
+              <div className="h-3 w-full rounded bg-slate-200 dark:bg-dark-700"></div>
+              <div className="h-3 w-20 rounded bg-slate-200 dark:bg-dark-700"></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
 const Dashboard = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -75,11 +135,7 @@ const Dashboard = () => {
   }, []);
 
   if (loading) {
-    return (
-      <div className="h-full flex items-center justify-center min-h-[400px]">
-        <div className="w-10 h-10 border-4 border-primary-500/30 border-t-primary-500 rounded-full animate-spin"></div>
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   const stats = data?.stats || { totalLeads: 0, conversionRate: 0, aiAutomatedReplies: 0, operationalTimeSaved: 0 };
@@ -99,7 +155,7 @@ const Dashboard = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <StatCard title="Total Leads" value={stats.totalLeads} change="+12.5%" icon={Users} isPositive={true} />
         <StatCard title="Conversion Rate" value={stats.conversionRate} decimals={1} suffix="%" change="+15.0%" icon={Target} isPositive={true} />
         <StatCard title="Operational Time Saved" value={stats.operationalTimeSaved} suffix=" hrs" change="+30%" icon={TrendingUp} isPositive={true} />
@@ -195,7 +251,7 @@ const Dashboard = () => {
                 <p className="text-xs text-slate-400 dark:text-slate-500">{task.time}</p>
               </div>
             )) : (
-              <p className="text-center text-slate-500 py-8">No actions required.</p>
+              <p className="text-center text-slate-500 py-8">No actions found.</p>
             )}
           </div>
         </div>

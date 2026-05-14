@@ -140,6 +140,34 @@ const ActivityModal = ({ isOpen, onClose, onActivityAdded }) => {
   );
 };
 
+const ActivityListSkeleton = () => (
+  <div className="divide-y divide-slate-200 dark:divide-dark-700">
+    {[1, 2, 3, 4, 5, 6].map((item) => (
+      <div key={item} className="p-5 animate-pulse">
+        <div className="flex flex-col sm:flex-row gap-4 justify-between sm:items-start">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="h-5 w-48 rounded bg-slate-200 dark:bg-dark-700"></div>
+              <div className="h-5 w-24 rounded bg-slate-200 dark:bg-dark-700"></div>
+            </div>
+            <div className="space-y-2">
+              <div className="h-3 w-full max-w-xl rounded bg-slate-200 dark:bg-dark-700"></div>
+              <div className="h-3 w-2/3 rounded bg-slate-200 dark:bg-dark-700"></div>
+            </div>
+          </div>
+          <div className="flex flex-row sm:flex-col items-center sm:items-end gap-2 shrink-0">
+            <div className="h-3 w-24 rounded bg-slate-200 dark:bg-dark-700"></div>
+            <div className="flex gap-2">
+              <div className="h-7 w-16 rounded-md bg-slate-200 dark:bg-dark-700"></div>
+              <div className="h-7 w-20 rounded-md bg-slate-200 dark:bg-dark-700"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
 
 const Activities = () => {
   const [activities, setActivities] = useState([]);
@@ -269,7 +297,7 @@ const Activities = () => {
         
         <div className="p-0">
           {loading ? (
-            <div className="p-8 text-center text-slate-500">Loading activities...</div>
+            <ActivityListSkeleton />
           ) : pagedActivities.length === 0 ? (
             <div className="p-8 text-center text-slate-500">No activities found.</div>
           ) : (
