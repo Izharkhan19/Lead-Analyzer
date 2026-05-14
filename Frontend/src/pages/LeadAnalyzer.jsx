@@ -755,13 +755,24 @@ const LeadAnalyzer = () => {
     needsNurture: false,
     isStale: false,
   });
+  const [paginationInfo, setPaginationInfo] = useState(null);
 
-  const loadLeads = async () => {
+  const loadLeads = async (page = 1, limit = 50) => {
     setLoading(true);
     try {
-      const response = await api.get('/leads');
-      const nextLeads = response.data.length ? response.data : demoLeads;
+      const response = await api.get(`/leads?page=${page}&limit=${limit}`);
+      const data = response.data;
+      
+      // Handle both paginated and non-paginated responses for backward compatibility
+      const leadsArray = data.leads || data;
+      const nextLeads = leadsArray.length ? leadsArray : demoLeads;
+      
       setLeads(nextLeads.map(normalizeLead));
+      
+      // Store pagination info if available
+      if (data.pagination) {
+        setPaginationInfo(data.pagination);
+      }
     } catch (error) {
       console.error('Failed to load leads:', error);
       setLeads(demoLeads.map(normalizeLead));
@@ -1379,8 +1390,12 @@ const LeadAnalyzer = () => {
                 onChange={(event) => table.getColumn('status')?.setFilterValue(event.target.value)}
                 className="input-field bg-white dark:bg-dark-900"
               >
-                <option value="">All statuses</option>
-                {statusOptions.map((status) => <option key={status} value={status}>{status}</option>)}
+                  <option value="">All statuses</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Follow-up">Follow-up</option>
+                  <option value="Closed">Closed</option>
+                {/* <option value="">All statuses</option>
+                {statusOptions.map((status) => <option key={status} value={status}>{status}</option>)} */}
               </select>
               <select
                 value={table.getColumn('type')?.getFilterValue() ?? ''}
@@ -1388,7 +1403,12 @@ const LeadAnalyzer = () => {
                 className="input-field bg-white dark:bg-dark-900"
               >
                 <option value="">All types</option>
-                {typeOptions.map((type) => <option key={type} value={type}>{type}</option>)}
+                      <option value="Corporate">Corporate</option>
+                      <option value="Association">Association</option>
+                      <option value="SMERF">SMERF</option>
+                      <option value="Wedding">Wedding</option>
+                {/* <option value="">All types</option>
+                {typeOptions.map((type) => <option key={type} value={type}>{type}</option>)} */}
               </select>
               <select
                 value={table.getColumn('score')?.getFilterValue() ?? ''}
@@ -1458,6 +1478,89 @@ const LeadAnalyzer = () => {
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Pagination Controls */}
+          <div className="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-dark-800/50 border-t border-slate-200 dark:border-dark-700/50">
+            <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+              <span>Show</span>
+              <select
+                value={table.getState().pagination.pageSize}
+                onChange={(e) => table.setPageSize(Number(e.target.value))}
+                className="input-field bg-white dark:bg-dark-900 text-sm py-1 px-2"
+              >
+                {[8, 16, 24, 32].map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+              <span>entries</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-600 dark:text-slate-400">
+                Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
+              </span>
+
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => table.setPageIndex(0)}
+                  disabled={!table.getCanPreviousPage()}
+                  className="p-1 rounded border border-slate-300 dark:border-dark-600 hover:bg-slate-100 dark:hover:bg-dark-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="First page"
+                >
+                  <ChevronsLeft size={16} />
+                </button>
+                <button
+                  onClick={() => table.previousPage()}
+                  disabled={!table.getCanPreviousPage()}
+                  className="p-1 rounded border border-slate-300 dark:border-dark-600 hover:bg-slate-100 dark:hover:bg-dark-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Previous page"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+
+                {/* Page numbers */}
+                <div className="flex items-center gap-1 mx-2">
+                  {Array.from({ length: Math.min(5, table.getPageCount()) }, (_, i) => {
+                    const pageIndex = Math.max(0, Math.min(table.getPageCount() - 5, table.getState().pagination.pageIndex - 2)) + i;
+                    if (pageIndex >= table.getPageCount()) return null;
+                    
+                    return (
+                      <button
+                        key={pageIndex}
+                        onClick={() => table.setPageIndex(pageIndex)}
+                        className={`px-3 py-1 text-sm rounded border ${
+                          table.getState().pagination.pageIndex === pageIndex
+                            ? 'bg-primary-500 text-white border-primary-500'
+                            : 'border-slate-300 dark:border-dark-600 hover:bg-slate-100 dark:hover:bg-dark-700'
+                        }`}
+                      >
+                        {pageIndex + 1}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  onClick={() => table.nextPage()}
+                  disabled={!table.getCanNextPage()}
+                  className="p-1 rounded border border-slate-300 dark:border-dark-600 hover:bg-slate-100 dark:hover:bg-dark-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Next page"
+                >
+                  <ChevronRight size={16} />
+                </button>
+                <button
+                  onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+                  disabled={!table.getCanNextPage()}
+                  className="p-1 rounded border border-slate-300 dark:border-dark-600 hover:bg-slate-100 dark:hover:bg-dark-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Last page"
+                >
+                  <ChevronsRight size={16} />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 

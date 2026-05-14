@@ -1,16 +1,35 @@
-# React + Vite
+# CRM Backend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Node.js, Express, and MongoDB backend for the AI Lead Analyzer CRM demo.
 
-Currently, two official plugins are available:
+The backend is organized around:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Lead scoring from CRM/customer requirement data
+- Explainable lead insights: segment, signals, risks, and recommended sales action
+- Personalized smart email drafts and response previews
+- Activity logging for AI-generated follow-ups and communication actions
 
-## React Compiler
+## Setup
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+cd Backend
+npm install
+copy .env.example .env
+npm run dev
+```
 
-## Expanding the ESLint configuration
+By default the server runs on `http://localhost:5000` and connects to:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```text
+mongodb://127.0.0.1:27017/demo_crm
+```
+
+## Endpoints
+
+- `GET /api/health`
+- `GET /api/leads`
+- `POST /api/leads`
+- `POST /api/leads/analyze`
+- `GET /api/leads/:id/insights`
+- `POST /api/communication/smart-reply`
+- `GET /api/communication/activities`
