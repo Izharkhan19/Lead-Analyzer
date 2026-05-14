@@ -17,22 +17,6 @@ const emptyForm = {
   })),
 };
 
-const HotelListSkeleton = () => (
-  <div className="p-2 space-y-2">
-    {[1, 2, 3, 4, 5, 6].map((item) => (
-      <div key={item} className="p-4 rounded-xl animate-pulse">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0 flex-1 space-y-2">
-            <div className="h-4 w-3/4 rounded bg-slate-200 dark:bg-dark-700"></div>
-            <div className="h-3 w-20 rounded bg-slate-200 dark:bg-dark-700"></div>
-          </div>
-          <div className="h-5 w-5 rounded bg-slate-200 dark:bg-dark-700"></div>
-        </div>
-      </div>
-    ))}
-  </div>
-);
-
 const HotelOfferConfiguration = () => {
   const [hotelOffers, setHotelOffers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -187,7 +171,10 @@ const HotelOfferConfiguration = () => {
 
           <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
             {loading ? (
-              <HotelListSkeleton />
+              <div className="p-8 text-center space-y-2">
+                <div className="w-8 h-8 border-3 border-primary-500/20 border-t-primary-500 rounded-full animate-spin mx-auto"></div>
+                <p className="text-xs text-slate-400 font-medium tracking-wide uppercase">Syncing Properties...</p>
+              </div>
             ) : filteredHotels.length === 0 ? (
               <div className="p-8 text-center">
                 <p className="text-sm text-slate-400">No properties found</p>
