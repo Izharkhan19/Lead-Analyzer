@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 
 const nullableGuid = {
   type: String,
-  match: /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/,
+  match: /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{24}|)$/,
   default: null,
 };
 
@@ -132,6 +132,10 @@ const leadSchema = new mongoose.Schema(
     AIRecommendation: {
       type: String,
       default: null,
+    },
+    AIRecommendations: {
+      type: [String],
+      default: [],
     },
     AIScoreBreakdown: {
       type: mongoose.Schema.Types.Mixed,

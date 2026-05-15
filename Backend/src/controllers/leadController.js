@@ -15,17 +15,27 @@ const findLeadByIdentifier = async (leadId) => {
   });
 };
 
-const buildInputDetails = (body) => ({
-  eventPurpose: body.eventPurpose || null,
-  guestCount: body.guestCount ? Number(body.guestCount) : null,
-  roomsCount: body.roomsCount ? Number(body.roomsCount) : null,
-  startDate: body.startDate || null,
-  endDate: body.endDate || null,
-  budgetRange: body.budgetRange || null,
-  preferredLocation: body.preferredLocation || null,
-  decisionTimeline: body.decisionTimeline || null,
-  contactMethod: body.contactMethod || null,
-});
+const buildInputDetails = (body) => {
+  const fields = [
+    'eventPurpose', 'guestCount', 'roomsCount', 'startDate', 
+    'endDate', 'budgetRange', 'preferredLocation', 
+    'decisionTimeline', 'contactMethod'
+  ];
+  
+  const details = {};
+  fields.forEach(field => {
+    if (body[field] !== undefined) {
+      const value = body[field];
+      if (field === 'guestCount' || field === 'roomsCount') {
+        details[field] = value !== '' ? Number(value) : null;
+      } else {
+        details[field] = value || null;
+      }
+    }
+  });
+  
+  return details;
+};
 
 const buildLeadPayload = async (body, analysis) => {
   const hotelOfferId = body.selectedHotelOfferId || body.SelectedHotelOfferID || body.hotelOfferId || null;
@@ -39,34 +49,28 @@ const buildLeadPayload = async (body, analysis) => {
     mode: 'initial',
   });
 
-  return {
+  const payload = {
     ...body,
-    Lead_Source_Term: body.Lead_Source_Term || body.eventPurpose || 'Manual Entry',
-    Address: body.Address || body.preferredLocation || null,
-    Priority: body.Priority || body.mainPriority || body.decisionTimeline || null,
-    IsGroup: body.IsGroup ?? Boolean(body.groupType),
-    Status: body.Status || body.status || 'Pending',
     LeadRatings: analysis.score,
     AISegment: analysis.segment,
     AIRecommendation: analysis.recommendedAction,
+    AIRecommendations: analysis.recommendedActions,
     AIScoreBreakdown: analysis.breakdown,
     AISignals: analysis.signals,
     AIRisks: analysis.risks,
     AIScoreUpdatedOn: new Date(),
-    Lead_Status_Term: body.Lead_Status_Term || 'Scored',
-    Comment: body.Comment || body.specialRequirements || analysis.recommendedAction,
     SelectedHotelOfferID: configuredOffer.hotelOffer?.HotelOfferID || hotelOfferId,
     SelectedHotelName: configuredOffer.hotelOffer?.HotelName || hotelName,
     SelectedHotelCode: configuredOffer.hotelOffer?.HotelCode || hotelCode,
-    PropertyID: configuredOffer.hotelOffer?.HotelCode || hotelCode,
-    AppliedOffer: buildOfferSnapshot({
-      ...configuredOffer,
-      segment: analysis.segment,
-      mode: 'initial',
-    }),
-    LastActivityDate: new Date(),
-    InputDetails: buildInputDetails(body),
+    LastActivityDate: new Date()
   };
+
+  if (!payload.Lead_Source_Term && body.eventPurpose) payload.Lead_Source_Term = body.eventPurpose;
+  if (!payload.Address && body.preferredLocation) payload.Address = body.preferredLocation;
+  if (!payload.Priority && body.mainPriority) payload.Priority = body.mainPriority;
+  if (!payload.Comment && body.specialRequirements) payload.Comment = body.specialRequirements;
+  
+  return payload;
 };
 
 const buildLeadActivity = (lead, action) => {
@@ -75,13 +79,13 @@ const buildLeadActivity = (lead, action) => {
   return {
     ClientID: lead.ClientID || null,
     OwnerID: lead.OwnerID || null,
-    AssociationID: lead.LeadID || null,
+    AssociationID: lead.LeadID || lead._id || null,
     AssociationType_Term: 'Lead',
     ActivityStatus_Term: lead.Status || 'Pending',
     ActivityType_Term: action === 'create' ? 'Lead Created' : 'Lead Updated',
-    Priority_Term: lead.Priority || null,
+    Priority_Term: lead.Priority || lead.mainPriority || null,
     ActivitySubject: `${subject} ${action === 'create' ? 'created' : 'updated'}`,
-    ActivityDetails: lead.Comment
+    ActivityDetails: lead.Comment || lead.specialRequirements
       ? `${lead.Comment}${lead.LeadRatings ? ` | Score: ${lead.LeadRatings}` : ''}`
       : `${action === 'create' ? 'Lead created' : 'Lead updated'}${lead.Status ? ` with status ${lead.Status}` : ''}`,
     DateOfCreated: new Date(),
@@ -99,7 +103,7 @@ const buildLeadActivity = (lead, action) => {
 
 export const createLead = async (req, res, next) => {
   try {
-    const analysis = analyzeLeadData(req.body);
+    const analysis = await analyzeLeadData(req.body, []);
     const lead = await Lead.create(await buildLeadPayload(req.body, analysis));
     await Activity.create(buildLeadActivity(lead, 'create'));
 
@@ -141,13 +145,21 @@ export const updateLead = async (req, res, next) => {
         ...buildInputDetails(req.body),
       },
     };
-    const analysis = analyzeLeadData(mergedLead);
+
+    const activities = await Activity.find({ 
+      $or: [
+        { AssociationID: lead.LeadID },
+        { AssociationID: String(lead._id) }
+      ]
+    }).sort({ DateOfCreated: -1 });
+    const analysis = await analyzeLeadData(mergedLead, activities);
     const payload = await buildLeadPayload(mergedLead, analysis);
 
     Object.assign(lead, payload, {
       LeadRatings: analysis.score,
       AISegment: analysis.segment,
       AIRecommendation: analysis.recommendedAction,
+      AIRecommendations: analysis.recommendedActions,
       AIScoreBreakdown: analysis.breakdown,
       AISignals: analysis.signals,
       AIRisks: analysis.risks,
@@ -165,10 +177,28 @@ export const updateLead = async (req, res, next) => {
   }
 };
 
-export const getLeads = async (_req, res, next) => {
+export const getLeads = async (req, res, next) => {
   try {
-    const leads = await Lead.find().sort({ CreatedOn: -1 });
-    res.json(leads);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = (page - 1) * limit;
+
+    const totalLeads = await Lead.countDocuments();
+    const leads = await Lead.find()
+      .sort({ CreatedOn: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    res.json({
+      leads,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalLeads / limit),
+        totalLeads,
+        hasNextPage: page * limit < totalLeads,
+        hasPrevPage: page > 1
+      }
+    });
   } catch (error) {
     next(error);
   }
@@ -178,12 +208,23 @@ export const analyzeLead = async (req, res, next) => {
   try {
     const leadId = req.body?.leadData?.id || req.body?.id;
     const lead = await findLeadByIdentifier(leadId);
-    const analysis = analyzeLeadData(lead || req.body?.leadData || {});
+    
+    const activities = lead 
+      ? await Activity.find({ 
+          $or: [
+            { AssociationID: lead.LeadID },
+            { AssociationID: String(lead._id) }
+          ]
+        }).sort({ DateOfCreated: -1 })
+      : [];
+      
+    const analysis = await analyzeLeadData(lead || req.body?.leadData || {}, activities);
 
     if (lead) {
       lead.LeadRatings = analysis.score;
       lead.AISegment = analysis.segment;
       lead.AIRecommendation = analysis.recommendedAction;
+      lead.AIRecommendations = analysis.recommendedActions;
       lead.AIScoreBreakdown = analysis.breakdown;
       lead.AISignals = analysis.signals;
       lead.AIRisks = analysis.risks;
@@ -198,6 +239,7 @@ export const analyzeLead = async (req, res, next) => {
     res.json({
       score: analysis.score,
       next_best_action: analysis.recommendedAction,
+      next_best_actions: analysis.recommendedActions,
       segment: analysis.segment,
       breakdown: analysis.breakdown,
       signals: analysis.signals,
@@ -218,7 +260,13 @@ export const getLeadInsights = async (req, res, next) => {
       throw new Error('Lead not found');
     }
 
-    const analysis = analyzeLeadData(lead);
+    const activities = await Activity.find({ 
+      $or: [
+        { AssociationID: lead.LeadID },
+        { AssociationID: String(lead._id) }
+      ]
+    }).sort({ DateOfCreated: -1 });
+    const analysis = await analyzeLeadData(lead, activities);
     res.json({ lead, analysis });
   } catch (error) {
     next(error);
