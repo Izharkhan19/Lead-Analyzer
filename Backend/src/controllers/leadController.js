@@ -49,7 +49,6 @@ const buildLeadPayload = async (body, analysis) => {
     LeadRatings: analysis.score,
     AISegment: analysis.segment,
     AIRecommendation: analysis.recommendedAction,
-    AIRecommendations: analysis.recommendedActions,
     AIScoreBreakdown: analysis.breakdown,
     AISignals: analysis.signals,
     AIRisks: analysis.risks,
@@ -100,7 +99,7 @@ const buildLeadActivity = (lead, action) => {
 
 export const createLead = async (req, res, next) => {
   try {
-    const analysis = await analyzeLeadData(req.body, []);
+    const analysis = analyzeLeadData(req.body);
     const lead = await Lead.create(await buildLeadPayload(req.body, analysis));
     await Activity.create(buildLeadActivity(lead, 'create'));
 
@@ -142,16 +141,13 @@ export const updateLead = async (req, res, next) => {
         ...buildInputDetails(req.body),
       },
     };
-
-    const activities = await Activity.find({ AssociationID: lead.LeadID || lead._id }).sort({ DateOfCreated: -1 });
-    const analysis = await analyzeLeadData(mergedLead, activities);
+    const analysis = analyzeLeadData(mergedLead);
     const payload = await buildLeadPayload(mergedLead, analysis);
 
     Object.assign(lead, payload, {
       LeadRatings: analysis.score,
       AISegment: analysis.segment,
       AIRecommendation: analysis.recommendedAction,
-      AIRecommendations: analysis.recommendedActions,
       AIScoreBreakdown: analysis.breakdown,
       AISignals: analysis.signals,
       AIRisks: analysis.risks,
@@ -169,28 +165,10 @@ export const updateLead = async (req, res, next) => {
   }
 };
 
-export const getLeads = async (req, res, next) => {
+export const getLeads = async (_req, res, next) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50;
-    const skip = (page - 1) * limit;
-
-    const totalLeads = await Lead.countDocuments();
-    const leads = await Lead.find()
-      .sort({ CreatedOn: -1 })
-      .skip(skip)
-      .limit(limit);
-
-    res.json({
-      leads,
-      pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(totalLeads / limit),
-        totalLeads,
-        hasNextPage: page * limit < totalLeads,
-        hasPrevPage: page > 1
-      }
-    });
+    const leads = await Lead.find().sort({ CreatedOn: -1 });
+    res.json(leads);
   } catch (error) {
     next(error);
   }
@@ -200,18 +178,12 @@ export const analyzeLead = async (req, res, next) => {
   try {
     const leadId = req.body?.leadData?.id || req.body?.id;
     const lead = await findLeadByIdentifier(leadId);
-    
-    const activities = lead 
-      ? await Activity.find({ AssociationID: lead.LeadID || lead._id }).sort({ DateOfCreated: -1 })
-      : [];
-      
-    const analysis = await analyzeLeadData(lead || req.body?.leadData || {}, activities);
+    const analysis = analyzeLeadData(lead || req.body?.leadData || {});
 
     if (lead) {
       lead.LeadRatings = analysis.score;
       lead.AISegment = analysis.segment;
       lead.AIRecommendation = analysis.recommendedAction;
-      lead.AIRecommendations = analysis.recommendedActions;
       lead.AIScoreBreakdown = analysis.breakdown;
       lead.AISignals = analysis.signals;
       lead.AIRisks = analysis.risks;
@@ -226,7 +198,6 @@ export const analyzeLead = async (req, res, next) => {
     res.json({
       score: analysis.score,
       next_best_action: analysis.recommendedAction,
-      next_best_actions: analysis.recommendedActions,
       segment: analysis.segment,
       breakdown: analysis.breakdown,
       signals: analysis.signals,
@@ -247,8 +218,7 @@ export const getLeadInsights = async (req, res, next) => {
       throw new Error('Lead not found');
     }
 
-    const activities = await Activity.find({ AssociationID: lead.LeadID || lead._id }).sort({ DateOfCreated: -1 });
-    const analysis = await analyzeLeadData(lead, activities);
+    const analysis = analyzeLeadData(lead);
     res.json({ lead, analysis });
   } catch (error) {
     next(error);
