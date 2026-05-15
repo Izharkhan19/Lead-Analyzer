@@ -10,9 +10,17 @@ import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 
 const app = express();
 
+// app.use(cors({
+//   origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
+// }));
+
 app.use(cors({
-  origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
+  origin: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  credentials: true
 }));
+ 
 app.use(express.json());
 app.use(morgan('dev'));
 
