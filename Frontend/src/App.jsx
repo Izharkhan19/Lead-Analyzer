@@ -22,7 +22,7 @@ const Sidebar = () => {
           LN
         </div>
         <h1 className="text-xl font-bold text-white tracking-widest">
-          Lead-Nurturing
+          Nurturing
         </h1>
       </div>
 
