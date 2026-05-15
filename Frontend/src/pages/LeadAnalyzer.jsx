@@ -28,17 +28,24 @@ import {
   LayoutList,
   Mail,
   MessageSquare,
+  Phone,
   Plus,
   Search,
   Send,
   SlidersHorizontal,
+  Smartphone,
   Target,
   Trash2,
   TrendingUp,
+  User,
   X,
   Zap,
+  Flag,
+  AlertTriangle,
+  Milestone,
+  CheckCircle,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../api/client';
 
 const demoLeads = [
@@ -61,7 +68,8 @@ const demoLeads = [
     Comment: 'Analyzing engagement patterns and proposal fit.',
     GroupType: 'Corporate',
     SubmittedBy: 'Website',
-    CreatedOn: new Date().toISOString(),
+    CreatedOn: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    LastActivityDate: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
     IsActive: true,
   },
   {
@@ -83,7 +91,7 @@ const demoLeads = [
     Comment: 'Send updated pricing sheet.',
     GroupType: 'Association',
     SubmittedBy: 'Email',
-    CreatedOn: new Date().toISOString(),
+    CreatedOn: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
     IsActive: true,
   },
 ];
@@ -106,35 +114,156 @@ const displayValue = (value) => {
   return value;
 };
 
-const normalizeLead = (lead, index) => ({
-  id: lead.LeadID || lead._id || `TEMP-${index + 1}`,
-  leadNo: lead.LeadNo || `LEAD-${index + 1}`,
-  companyName: lead.CompanyName || 'Unnamed Company',
-  contactName: [lead.FirstName, lead.LastName].filter(Boolean).join(' ') || 'Unnamed Contact',
-  email: lead.Email || '-',
-  mobileNo: lead.MobileNo || lead.TelephoneNo || '-',
-  city: [lead.City, lead.State, lead.Country].filter(Boolean).join(', ') || '-',
-  type: lead.GroupType || lead.Lead_Source_Term || 'Lead',
-  source: lead.Lead_Source_Term || '-',
-  status: lead.Status || 'Pending',
-  priority: lead.Priority || 'Standard',
-  score: Number(lead.LeadRatings || 0),
-  action: lead.AIRecommendation || lead.Comment || 'Run AI analysis for recommended next action.',
-  createdOn: lead.CreatedOn,
-  lastActivityDate: lead.LastActivityDate,
-  isActive: lead.IsActive,
-  raw: lead,
-});
+const getNurtureStatus = (createdOn, lastActivityDate) => {
+  if (!createdOn) return { isStale: false, needsNurture: false };
+
+  const now = new Date();
+  const created = new Date(createdOn);
+  const activity = new Date(lastActivityDate || createdOn);
+
+  const diffCreatedMin = (now - created) / (1000 * 60);
+  const diffActivityMin = (now - activity) / (1000 * 60);
+
+  return {
+    isStale: diffCreatedMin >= 1,
+    needsNurture: diffActivityMin >= 1,
+    ageMin: Math.floor(diffCreatedMin),
+    inactiveMin: Math.floor(diffActivityMin)
+  };
+};
+
+const formatDuration = (totalMinutes) => {
+  if (totalMinutes < 1) return 'just now';
+
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = Math.floor(totalMinutes % 60);
+
+  const parts = [];
+  if (days > 0) parts.push(`${days} day${days > 1 ? 's' : ''}`);
+  if (hours > 0) parts.push(`${hours} hour${hours > 1 ? 's' : ''}`);
+  if (minutes > 0) parts.push(`${minutes} minute${minutes !== 1 ? 's' : ''}`);
+
+  return parts.length > 0 ? parts.join(' ') : 'just now';
+};
+
+const normalizeLead = (lead, index) => {
+  const nurture = getNurtureStatus(lead.CreatedOn, lead.LastActivityDate);
+  const inputDetails = lead.InputDetails || {};
+  const preferredMethod = inputDetails.contactMethod || (lead.Email ? 'Email' : 'Phone');
+
+  return {
+    id: lead.LeadID || lead._id || `TEMP-${index + 1}`,
+    leadNo: lead.LeadNo || `LEAD-${index + 1}`,
+    companyName: lead.CompanyName || 'Unnamed Company',
+    contactName: [lead.FirstName, lead.LastName].filter(Boolean).join(' ') || 'Unnamed Contact',
+    email: lead.Email || '-',
+    mobileNo: lead.MobileNo || lead.TelephoneNo || '-',
+    city: [lead.City, lead.State, lead.Country].filter(Boolean).join(', ') || '-',
+    type: lead.GroupType || lead.Lead_Source_Term || 'Lead',
+    source: lead.Lead_Source_Term || '-',
+    status: lead.Status || 'Pending',
+    priority: lead.Priority || 'Standard',
+    score: Number(lead.LeadRatings || 0),
+    action: lead.AIRecommendation || lead.Comment || 'Run AI analysis for recommended next action.',
+    actions: (lead.AIRecommendations && lead.AIRecommendations.length > 0) 
+      ? lead.AIRecommendations 
+      : (lead.AIRecommendation ? [lead.AIRecommendation] : ['Run AI analysis for recommended next action.']),
+    createdOn: lead.CreatedOn,
+    lastActivityDate: lead.LastActivityDate,
+    nurture,
+    preferredMethod,
+    isActive: lead.IsActive,
+    raw: lead,
+  };
+};
 
 const getScoreBadge = (score) => {
-  if (score >= 82) {
+  if (score > 80) {
     return 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20';
   }
-  if (score >= 65) {
+  if (score >= 50) {
     return 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20';
   }
   return 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20';
 };
+
+const WinProbabilityGauge = ({ probability }) => {
+  const radius = 42;
+  const circumference = Math.PI * radius;
+  const offset = circumference - (probability / 100) * circumference;
+
+  const getGaugeColor = (score) => {
+    if (score > 80) return 'text-emerald-500';
+    if (score >= 50) return 'text-amber-500';
+    return 'text-rose-500';
+  };
+
+  const getTextColor = (score) => {
+    if (score > 80) return 'text-emerald-600 dark:text-emerald-400';
+    if (score >= 50) return 'text-amber-600 dark:text-amber-400';
+    return 'text-rose-600 dark:text-rose-400';
+  };
+
+  return (
+    <div className="relative w-48 mx-auto mb-4">
+      <svg viewBox="0 0 100 55" className="w-full">
+        {/* Background track */}
+        <path
+          d="M 10 50 A 40 40 0 0 1 90 50"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="10"
+          strokeLinecap="round"
+          className="text-slate-100 dark:text-dark-800"
+        />
+        {/* Progress track */}
+        <path
+          d="M 10 50 A 40 40 0 0 1 90 50"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="10"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          className={`${getGaugeColor(probability)} transition-all duration-1000 ease-out`}
+        />
+      </svg>
+      <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-center">
+        <span className={`text-3xl font-black leading-none ${getTextColor(probability)}`}>{probability}%</span>
+        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Win Likelihood</span>
+      </div>
+    </div>
+  );
+};
+
+const RoadmapToClose = ({ steps, score = 0 }) => (
+  <div className="space-y-4">
+    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+      <Milestone size={14} className="text-primary-500" />
+      Roadmap to Close
+    </h4>
+    <div className="relative pl-6 space-y-6">
+      {/* Background line */}
+      <div className="absolute left-[11px] top-2 bottom-2 w-0.5 bg-slate-100 dark:bg-dark-800"></div>
+      {/* Progress line */}
+      <div
+        className="absolute left-[11px] top-2 w-0.5 bg-primary-500 transition-all duration-1000 ease-out"
+        style={{ height: `calc(${score}% * 0.9 + 2px)`, maxHeight: 'calc(100% - 12px)' }}
+      ></div>
+
+      {steps.map((step, i) => (
+        <div key={i} className="relative">
+          <div className={`absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-dark-900 transition-colors duration-500 ${step.done ? 'bg-primary-500' : 'bg-slate-300 dark:bg-dark-700'}`}></div>
+          <div className="flex flex-col gap-1">
+            <p className={`text-sm font-bold transition-colors ${step.done ? 'text-slate-400 line-through' : 'text-slate-800 dark:text-white'}`}>{step.label}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{step.description}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
 
 const LeadDetailSection = ({ title, fields }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -152,7 +281,7 @@ const LeadDetailSection = ({ title, fields }) => {
           {isOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
         </div>
       </button>
-      
+
       {isOpen && (
         <div className="p-4 pt-0">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
@@ -171,14 +300,14 @@ const LeadDetailSection = ({ title, fields }) => {
   );
 };
 
-const LeadDetailView = ({ 
-  lead, 
-  onClose, 
-  onAnalyze, 
-  analyzingId, 
-  onGenerateEmail, 
-  generatingEmail, 
-  generatedEmail, 
+const EmailModal = ({
+  lead,
+  onClose,
+  onAnalyze,
+  analyzingId,
+  onGenerateEmail,
+  generatingEmail,
+  generatedEmail,
   onEmailChange,
   customOffer,
   onCustomOfferChange,
@@ -187,7 +316,8 @@ const LeadDetailView = ({
   sendingEmail,
   hotelOffer,
   allHotelOffers,
-  onHotelChange
+  onHotelChange,
+  onSendEmail
 }) => {
   const [isScoreOpen, setIsScoreOpen] = useState(false);
   const [selectedHotelId, setSelectedHotelId] = useState(hotelOffer?.HotelOfferID || '');
@@ -224,7 +354,7 @@ const LeadDetailView = ({
       const firstOffer = availableOffers[0].value;
       setSelectedOffer(firstOffer);
       onCustomOfferChange(firstOffer);
-      setTimeout(() => onGenerateEmail(), 50);
+      onGenerateEmail(firstOffer);
     } else if (lead.raw.AppliedOffer?.offerText && !selectedOffer) {
       setSelectedOffer(lead.raw.AppliedOffer.offerText);
     }
@@ -234,9 +364,6 @@ const LeadDetailView = ({
 
   const raw = lead.raw;
   const inputDetails = raw.InputDetails || {};
-  const scoreBreakdown = raw.AIScoreBreakdown || {};
-  const aiSignals = raw.AISignals || [];
-  const aiRisks = raw.AIRisks || [];
   const contactFields = [
     { label: 'Lead No', value: raw.LeadNo },
     { label: 'Title', value: raw.Title },
@@ -318,7 +445,7 @@ const LeadDetailView = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white dark:bg-dark-900 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+      <div className="bg-white dark:bg-dark-900 rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col overflow-hidden">
         <div className="p-6 border-b border-slate-200 dark:border-dark-700 flex items-start justify-between gap-4 shrink-0">
           <div className="flex items-center gap-3 flex-wrap">
             <span className="px-2 py-1 rounded-md bg-primary-50 dark:bg-primary-500/10 text-xs font-bold text-primary-600 dark:text-primary-400 border border-primary-100 dark:border-primary-500/20">
@@ -337,178 +464,196 @@ const LeadDetailView = ({
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
-          <div className="rounded-lg border border-primary-200 dark:border-primary-500/20 bg-primary-50 dark:bg-primary-500/10 p-4">
-            <div className="flex items-center justify-between gap-3 mb-2">
-              <span className={`px-3 py-1.5 rounded-full text-sm font-semibold border ${getScoreBadge(lead.score)}`}>
-                {lead.score}% AI Probability
-              </span>
-              <div className="flex gap-2">
-              </div>
-            </div>
-            <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">{lead.action}</p>
-          </div>
+        <div className="p-6 overflow-y-auto space-y-8 flex-1 custom-scrollbar">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* AI Predictive Analytics Column */}
+            <div className="lg:col-span-1 space-y-6">
+              <div className="rounded-2xl border border-slate-200 dark:border-dark-700 bg-white dark:bg-dark-900 p-6 shadow-sm">
+                <WinProbabilityGauge probability={lead.score > 0 ? lead.score : 75} />
 
-          {(generatingEmail || generatedEmail) && (
-            <section className="animate-in fade-in slide-in-from-top-4 duration-500">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 flex items-center gap-2">
-                <Mail size={14} />
-                AI Generated Email Draft
-              </h3>
-              <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
-                    Configured Hotel
-                  </label>
-                  <select
-                    value={selectedHotelId}
-                    onChange={(e) => {
-                      const newId = e.target.value;
-                      setSelectedHotelId(newId);
-                      setSelectedOffer('');
-                      onHotelChange(newId);
-                    }}
-                    className="w-full p-2.5 rounded-lg border border-slate-200 dark:border-dark-700 bg-white dark:bg-dark-800 text-sm text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all outline-none"
-                  >
-                    <option value="">Select a hotel...</option>
-                    {allHotelOffers.map(hotel => (
-                      <option key={hotel.HotelOfferID} value={hotel.HotelOfferID}>
-                        {hotel.HotelName} ({hotel.HotelCode})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
-                    Select Offer
-                  </label>
-                  <select
-                    value={selectedOffer}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setSelectedOffer(val);
-                      onCustomOfferChange(val);
-                      setTimeout(() => onGenerateEmail(), 50);
-                    }}
-                    disabled={!selectedHotelId}
-                    className="w-full p-2.5 rounded-lg border border-slate-200 dark:border-dark-700 bg-white dark:bg-dark-800 text-sm text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all outline-none disabled:opacity-50 disabled:bg-slate-50 dark:disabled:bg-dark-900/50"
-                  >
-                    <option value="">Select an offer...</option>
-                    {availableOffers.map((off, idx) => (
-                      <option key={idx} value={off.value}>{off.label}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {selectedOffer && (
-                <div className="mb-4 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20">
-                  <p className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase mb-1">Applied Offer:</p>
-                  <p className="text-sm text-emerald-700 dark:text-emerald-400 italic">"{selectedOffer}"</p>
-                </div>
-              )}
-              {generatingEmail ? (
-                <div className="rounded-lg border border-slate-200 dark:border-dark-700 bg-slate-50 dark:bg-dark-800/50 p-6 space-y-4">
-                  <div className="h-4 bg-slate-200 dark:bg-dark-700 rounded w-1/4 animate-pulse"></div>
-                  <div className="space-y-3">
-                    <div className="h-3 bg-slate-200 dark:bg-dark-700 rounded w-full animate-pulse"></div>
-                    <div className="h-3 bg-slate-200 dark:bg-dark-700 rounded w-5/6 animate-pulse"></div>
-                    <div className="h-3 bg-slate-200 dark:bg-dark-700 rounded w-full animate-pulse"></div>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-lg border border-slate-200 dark:border-dark-700 bg-slate-50 dark:bg-dark-800/50 p-4">
-                  <textarea
-                    value={generatedEmail}
-                    onChange={(e) => onEmailChange(e.target.value)}
-                    className="w-full h-48 p-3 rounded-lg border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-900 text-sm text-slate-700 dark:text-slate-300 resize-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    placeholder="Edit the AI-generated email draft..."
-                  />
-                  <div className="mt-3 flex justify-end">
-                    <button
-                      onClick={() => onSendEmail(generatedEmail, lead.email)}
-                      disabled={sendingEmail || !generatedEmail}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95 transition-all disabled:opacity-50 text-sm font-bold shadow-md shadow-emerald-500/20"
-                    >
-                      {sendingEmail ? 'Sending...' : 'Send to Lead'}
-                      <Send size={14} />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </section>
-          )}
-
-          {(generatingSms || generatedSms) && (
-            <section className="animate-in fade-in slide-in-from-top-4 duration-500 delay-150">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 flex items-center gap-2">
-                <MessageSquare size={14} />
-                AI Generated SMS
-              </h3>
-              {generatingSms ? (
-                <div className="rounded-lg border border-slate-200 dark:border-dark-700 bg-slate-50 dark:bg-dark-800/50 p-4 space-y-2">
-                  <div className="h-3 bg-slate-200 dark:bg-dark-700 rounded w-full animate-pulse"></div>
-                  <div className="h-3 bg-slate-200 dark:bg-dark-700 rounded w-4/5 animate-pulse"></div>
-                </div>
-              ) : (
-                <div className="rounded-lg border border-slate-200 dark:border-dark-700 bg-slate-50 dark:bg-dark-800/50 p-4 relative group/sms">
-                  <p className="text-sm text-slate-700 dark:text-slate-300 pr-10">{generatedSms}</p>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(generatedSms);
-                      // Simple feedback could be added here if needed
-                    }}
-                    className="absolute top-4 right-4 p-2 rounded-md bg-white dark:bg-dark-800 border border-slate-200 dark:border-dark-700 text-slate-400 hover:text-primary-600 transition-colors shadow-sm"
-                    title="Copy SMS"
-                  >
-                    <Copy size={14} />
-                  </button>
-                </div>
-              )}
-            </section>
-          )}
-
-
-
-          <section className="rounded-lg border border-slate-200 dark:border-dark-700 bg-white dark:bg-dark-900 overflow-hidden">
-            <button
-              onClick={() => setIsScoreOpen(!isScoreOpen)}
-              className="w-full flex items-center justify-between p-4 bg-slate-50 dark:bg-dark-800/50 hover:bg-slate-100 dark:hover:bg-dark-800 transition-colors"
-            >
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                AI Score Breakdown
-              </h3>
-              <div className="text-slate-400">
-                {isScoreOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-              </div>
-            </button>
-            
-            {isScoreOpen && (
-              <div className="p-4 pt-0">
-                <div className="space-y-3 mt-4">
-                  {Object.entries(scoreBreakdown).length ? Object.entries(scoreBreakdown).map(([key, item]) => {
-                    const percent = item.max ? Math.round((item.score / item.max) * 100) : 0;
-
-                    return (
-                      <div key={key} className="rounded-lg border border-slate-100 dark:border-dark-800 bg-slate-50/50 dark:bg-dark-800/30 p-3">
-                        <div className="flex items-center justify-between gap-3 mb-2">
-                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{item.label}</p>
-                          <p className="text-xs font-bold text-slate-500 dark:text-slate-400">{item.score}/{item.max}</p>
-                        </div>
-                        <div className="h-2 rounded-full bg-slate-200 dark:bg-dark-700 overflow-hidden">
-                          <div className="h-full bg-primary-500 rounded-full" style={{ width: `${percent}%` }}></div>
-                        </div>
+                <div className="space-y-4 mt-6">
+                  {((lead.raw.AISignals && lead.raw.AISignals.length > 0) || lead.score >= 60) && (
+                    <div className="flex items-start gap-3 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20">
+                      <Flag size={16} className="text-emerald-600 mt-0.5" />
+                      <div>
+                        <p className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase">Green Flag</p>
+                        <p className="text-xs text-emerald-700 dark:text-emerald-400">
+                          {lead.raw.AISignals?.[0] || "Consistent response patterns detected in history."}
+                        </p>
                       </div>
-                    );
-                  }) : (
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Run analysis to generate a score breakdown.</p>
+                    </div>
+                  )}
+                  {((lead.raw.AIRisks && lead.raw.AIRisks.length > 0) || lead.score <= 50) && (
+                    <div className="flex items-start gap-3 p-3 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/20">
+                      <AlertTriangle size={16} className="text-rose-600 mt-0.5" />
+                      <div>
+                        <p className="text-xs font-bold text-rose-800 dark:text-rose-300 uppercase">Risk Factor</p>
+                        <p className="text-xs text-rose-700 dark:text-rose-400">
+                          {lead.raw.AIRisks?.[0] || "Budget constraints mentioned in last touchpoint."}
+                        </p>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
-            )}
-          </section>
 
+              <RoadmapToClose
+                score={lead.score}
+                steps={[
+                  { label: 'Initial Engagement', description: 'Lead successfully responded to first AI draft.', done: lead.score >= 25 },
+                  { label: 'Hotel Offer Resolution', description: 'Negotiate the seasonal group rate offer.', done: lead.score >= 50 },
+                  { label: 'Contracting Phase', description: 'Send agreement and finalize dates.', done: lead.score >= 75 },
+                  { label: 'Closing', description: 'Confirm deposit and welcome guest.', done: lead.score >= 95 },
+                ]}
+              />
+            </div>
+
+            {/* Email Drafting Column */}
+            <div className="lg:col-span-2 space-y-6">
+              <div className="rounded-2xl border border-slate-200 dark:border-dark-700 bg-white dark:bg-dark-900 p-5 shadow-sm overflow-hidden relative">
+                {/* Dynamic Progress Background */}
+                <div
+                  className={`absolute top-0 left-0 h-full opacity-[0.03] dark:opacity-[0.07] transition-all duration-1000 ease-out ${lead.score > 80 ? 'bg-emerald-500' : lead.score >= 50 ? 'bg-amber-500' : 'bg-rose-500'
+                    }`}
+                  style={{ width: `${lead.score}%` }}
+                ></div>
+
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className={`px-3 py-1.5 rounded-full text-sm font-black border ${getScoreBadge(lead.score)}`}>
+                        {lead.score}% AI PROBABILITY
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
+                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Live Analysis</span>
+                    </div>
+                  </div>
+
+                  {/* Subtle Progress Bar */}
+                  <div className="h-1.5 w-full bg-slate-100 dark:bg-dark-800 rounded-full overflow-hidden mb-4">
+                    <div
+                      className={`h-full transition-all duration-1000 ease-out ${lead.score > 80 ? 'bg-emerald-500' : lead.score >= 50 ? 'bg-amber-500' : 'bg-rose-500'
+                        }`}
+                      style={{ width: `${lead.score}%` }}
+                    ></div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 mb-2">
+                      <Zap size={14} className="text-indigo-500" />
+                      Next Best Action
+                    </h4>
+                    <div className="space-y-1">
+                      {lead.actions.map((action, idx) => (
+                        <div 
+                          key={idx} 
+                          className={`flex items-start gap-3 p-3 rounded-xl transition-all duration-300 ${
+                            idx === 1 ? 'bg-indigo-50/50 dark:bg-indigo-500/5' : 'hover:bg-slate-50 dark:hover:bg-dark-800/50'
+                          }`}
+                        >
+                          <Zap size={16} className="text-indigo-500 mt-0.5 shrink-0" />
+                          <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed font-medium">
+                            {action}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <section className="animate-in fade-in slide-in-from-top-4 duration-500">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 flex items-center gap-2">
+                  <Mail size={14} />
+                  AI Generated Email Draft
+                </h3>
+                <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
+                      Configured Hotel
+                    </label>
+                    <select
+                      value={selectedHotelId}
+                      onChange={(e) => {
+                        const newId = e.target.value;
+                        setSelectedHotelId(newId);
+                        setSelectedOffer('');
+                        onHotelChange(newId);
+                      }}
+                      className="w-full p-2.5 rounded-lg border border-slate-200 dark:border-dark-700 bg-white dark:bg-dark-800 text-sm text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all outline-none"
+                    >
+                      <option value="">Select a hotel...</option>
+                      {allHotelOffers.map(hotel => (
+                        <option key={hotel.HotelOfferID} value={hotel.HotelOfferID}>
+                          {hotel.HotelName} ({hotel.HotelCode})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
+                      Select Offer
+                    </label>
+                    <select
+                      value={selectedOffer}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSelectedOffer(val);
+                        onCustomOfferChange(val);
+                        onGenerateEmail(val);
+                      }}
+                      disabled={!selectedHotelId}
+                      className="w-full p-2.5 rounded-lg border border-slate-200 dark:border-dark-700 bg-white dark:bg-dark-800 text-sm text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all outline-none disabled:opacity-50 disabled:bg-slate-50 dark:disabled:bg-dark-900/50"
+                    >
+                      <option value="">Select an offer...</option>
+                      {availableOffers.map((off, idx) => (
+                        <option key={idx} value={off.value}>{off.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {selectedOffer && (
+                  <div className="mb-4 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20">
+                    <p className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase mb-1">Applied Offer:</p>
+                    <p className="text-sm text-emerald-700 dark:text-emerald-400 italic">"{selectedOffer}"</p>
+                  </div>
+                )}
+                {generatingEmail ? (
+                  <div className="rounded-lg border border-slate-200 dark:border-dark-700 bg-slate-50 dark:bg-dark-800/50 p-6 space-y-4">
+                    <div className="h-4 bg-slate-200 dark:bg-dark-700 rounded w-1/4 animate-pulse"></div>
+                    <div className="space-y-3">
+                      <div className="h-3 bg-slate-200 dark:bg-dark-700 rounded w-full animate-pulse"></div>
+                      <div className="h-3 bg-slate-200 dark:bg-dark-700 rounded w-5/6 animate-pulse"></div>
+                      <div className="h-3 bg-slate-200 dark:bg-dark-700 rounded w-full animate-pulse"></div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-slate-200 dark:border-dark-700 bg-slate-50 dark:bg-dark-800/50 p-4">
+                    <textarea
+                      value={generatedEmail}
+                      onChange={(e) => onEmailChange(e.target.value)}
+                      className="w-full h-48 p-3 rounded-lg border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-900 text-sm text-slate-700 dark:text-slate-300 resize-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      placeholder="Edit the AI-generated email draft..."
+                    />
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        onClick={() => onSendEmail(generatedEmail, lead.email)}
+                        disabled={sendingEmail || !generatedEmail}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95 transition-all disabled:opacity-50 text-sm font-bold shadow-md shadow-emerald-500/20"
+                      >
+                        {sendingEmail ? 'Sending...' : 'Send to Lead'}
+                        <Send size={14} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </section>
+            </div>
+          </div>
 
           <LeadDetailSection title="Contact Details" fields={allDetailsFields} />
 
@@ -522,8 +667,98 @@ const LeadDetailView = ({
               </p>
             </div>
           </section>
-          
+
           <div className="h-2 shrink-0"></div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const PhoneModal = ({ lead, onClose }) => {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+      <div className="bg-white dark:bg-dark-900 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 dark:border-dark-700">
+        <div className="p-8 text-center space-y-6">
+          <div className="w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mx-auto">
+            <Phone size={36} className="animate-bounce" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{lead.contactName}</h2>
+            <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">{lead.companyName}</p>
+          </div>
+          <div className="py-4 px-6 rounded-2xl bg-slate-50 dark:bg-dark-800 border border-slate-100 dark:border-dark-700">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Direct Line</p>
+            <p className="text-3xl font-black text-primary-600 dark:text-primary-400 tracking-tight">{lead.mobileNo}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <a
+              href={`tel:${lead.mobileNo}`}
+              className="flex items-center justify-center gap-2 p-4 rounded-2xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 transition-all active:scale-95 shadow-lg shadow-emerald-500/20"
+            >
+              <Phone size={18} /> Call Now
+            </a>
+            <button
+              onClick={onClose}
+              className="flex items-center justify-center gap-2 p-4 rounded-2xl bg-slate-100 dark:bg-dark-800 text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-200 dark:hover:bg-dark-700 transition-all active:scale-95"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const TextModal = ({ lead, onClose, generatedSms, generatingSms }) => {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+      <div className="bg-white dark:bg-dark-900 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 dark:border-dark-700">
+        <div className="p-6 border-b border-slate-100 dark:border-dark-800 flex items-center justify-between bg-indigo-50/50 dark:bg-indigo-500/5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+              <Smartphone size={20} />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">Text Follow-up</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">{lead.mobileNo}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-200 dark:hover:bg-dark-800 text-slate-400 transition-colors"><X size={20} /></button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">AI Suggested Message</label>
+            <div className="relative group">
+              <div className="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/50 text-slate-700 dark:text-slate-200 text-sm leading-relaxed italic">
+                {generatingSms ? 'Generating AI message...' : generatedSms}
+              </div>
+              {!generatingSms && (
+                <button
+                  onClick={() => navigator.clipboard.writeText(generatedSms)}
+                  className="absolute top-2 right-2 p-2 rounded-lg bg-white dark:bg-dark-800 border border-indigo-100 dark:border-indigo-800 text-indigo-500 hover:bg-indigo-50 shadow-sm transition-all active:scale-90"
+                  title="Copy to clipboard"
+                >
+                  <Copy size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-amber-50 dark:bg-amber-900/20 p-3 rounded-xl border border-amber-100 dark:border-amber-800/50 flex gap-3">
+            <AlertCircle size={18} className="text-amber-500 shrink-0" />
+            <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-tight font-medium">
+              Standard messaging rates apply. You can copy the message above and send it via your corporate mobile device.
+            </p>
+          </div>
+        </div>
+
+        <div className="p-4 bg-slate-50 dark:bg-dark-800/50 border-t border-slate-100 dark:border-dark-800 flex justify-end gap-3">
+          <button onClick={onClose} className="w-full py-3 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 active:scale-[0.98] transition-all">
+            Done
+          </button>
         </div>
       </div>
     </div>
@@ -537,7 +772,7 @@ const LeadAnalyzer = () => {
   const [analyzingId, setAnalyzingId] = useState(null);
   const [selectedLeadId, setSelectedLeadId] = useState(null);
   const [selectedLeadDetail, setSelectedLeadDetail] = useState(null);
-  const [showModal, setShowModal] = useState(false);
+  const [activeModal, setActiveModal] = useState(null); // 'email', 'phone', 'text'
   const [generatedEmail, setGeneratedEmail] = useState('');
   const [customOffer, setCustomOffer] = useState('');
   const [generatingEmail, setGeneratingEmail] = useState(false);
@@ -554,14 +789,27 @@ const LeadAnalyzer = () => {
     email: false,
     city: false,
     createdOn: false,
+    needsNurture: false,
+    isStale: false,
   });
+  const [paginationInfo, setPaginationInfo] = useState(null);
 
-  const loadLeads = async () => {
+  const loadLeads = async (page = 1, limit = 50) => {
     setLoading(true);
     try {
-      const response = await api.get('/leads');
-      const nextLeads = response.data.length ? response.data : demoLeads;
+      const response = await api.get(`/leads?page=${page}&limit=${limit}`);
+      const data = response.data;
+
+      // Handle both paginated and non-paginated responses for backward compatibility
+      const leadsArray = data.leads || data;
+      const nextLeads = leadsArray.length ? leadsArray : demoLeads;
+
       setLeads(nextLeads.map(normalizeLead));
+
+      // Store pagination info if available
+      if (data.pagination) {
+        setPaginationInfo(data.pagination);
+      }
     } catch (error) {
       console.error('Failed to load leads:', error);
       setLeads(demoLeads.map(normalizeLead));
@@ -570,14 +818,26 @@ const LeadAnalyzer = () => {
     }
   };
 
+  const location = useLocation();
+
   useEffect(() => {
     loadLeads();
 
     const handleLeadCreated = () => loadLeads();
     window.addEventListener('lead-created', handleLeadCreated);
 
+    // Handle auto-opening from Dashboard
+    if (location.state?.leadId) {
+      const timer = setTimeout(() => {
+        handleRowClick(location.state.leadId, location.state.openModal || 'email');
+        // Clear state so it doesn't reopen on refresh
+        window.history.replaceState({}, document.title);
+      }, 500); // Small delay to let leads load
+      return () => clearTimeout(timer);
+    }
+
     return () => window.removeEventListener('lead-created', handleLeadCreated);
-  }, []);
+  }, [location.state]);
 
   const selectedLead = useMemo(
     () => {
@@ -587,17 +847,21 @@ const LeadAnalyzer = () => {
     [leads, selectedLeadDetail, selectedLeadId],
   );
 
-  const handleRowClick = (leadId, autoGen = false) => {
+  const handleRowClick = (leadId, modalType = 'email') => {
     setSelectedLeadId(leadId);
-    setShowModal(true);
+    setActiveModal(modalType);
     setGeneratedEmail('');
     setCustomOffer('');
     setGeneratedSms('');
-    setShouldAutoGenerate(autoGen);
+
+    // Auto-trigger generation for email/text
+    if (modalType === 'email' || modalType === 'text') {
+      setShouldAutoGenerate(true);
+    }
   };
 
   const handleCloseModal = () => {
-    setShowModal(false);
+    setActiveModal(null);
     setSelectedLeadId(null);
     setSelectedLeadDetail(null);
     setGeneratedEmail('');
@@ -615,11 +879,11 @@ const LeadAnalyzer = () => {
         const response = await api.get('/hotel-offers');
         const hotels = response.data || [];
         setAllHotelOffers(hotels);
-        
+
         const lead = leads.find(l => l.id === selectedLeadId);
         if (lead?.raw) {
-          const hotel = hotels.find(h => 
-            h.HotelOfferID === lead.raw.SelectedHotelOfferID || 
+          const hotel = hotels.find(h =>
+            h.HotelOfferID === lead.raw.SelectedHotelOfferID ||
             (lead.raw.PropertyID && h.HotelCode === lead.raw.PropertyID)
           ) || (hotels.length > 0 ? hotels[0] : null);
           setCurrentHotelOffer(hotel || null);
@@ -651,20 +915,24 @@ const LeadAnalyzer = () => {
     loadLeadDetail();
   }, [selectedLeadId]);
 
-  // Handle auto-generation of email
+  // Handle auto-generation
   useEffect(() => {
-    if (showModal && selectedLead && shouldAutoGenerate && !generatedEmail && !generatingEmail) {
-      generateEmail();
-      generateSms();
-      setShouldAutoGenerate(false);
+    if (activeModal && selectedLead && shouldAutoGenerate) {
+      if (activeModal === 'email' && !generatedEmail && !generatingEmail) {
+        generateEmail();
+        setShouldAutoGenerate(false);
+      } else if (activeModal === 'text' && !generatedSms && !generatingSms) {
+        generateSms();
+        setShouldAutoGenerate(false);
+      }
     }
-  }, [showModal, selectedLead, shouldAutoGenerate, generatedEmail, generatingEmail]);
+  }, [activeModal, selectedLead, shouldAutoGenerate, generatedEmail, generatingEmail, generatedSms, generatingSms]);
 
   const runAnalysis = async (id) => {
     setAnalyzingId(id);
     try {
       const response = await api.post('/leads/analyze', { leadData: { id } });
-      const { score, next_best_action } = response.data;
+      const { score, next_best_action, next_best_actions } = response.data;
 
       setLeads((prev) => prev.map((lead) => (
         lead.id === id
@@ -673,12 +941,14 @@ const LeadAnalyzer = () => {
             score,
             status: lead.status || 'Pending',
             action: next_best_action,
+            actions: next_best_actions || [next_best_action],
             raw: {
               ...lead.raw,
               LeadRatings: score,
               Lead_Status_Term: 'Scored',
               Status: lead.status || 'Pending',
               AIRecommendation: next_best_action,
+              AIRecommendations: next_best_actions,
               AISegment: response.data.segment,
               AIScoreBreakdown: response.data.breakdown,
               AISignals: response.data.signals,
@@ -697,15 +967,16 @@ const LeadAnalyzer = () => {
     }
   };
 
-  const generateEmail = async () => {
+  const generateEmail = async (offerOverride) => {
     if (!selectedLead) return;
+    const activeOffer = offerOverride !== undefined ? offerOverride : customOffer;
     setGeneratingEmail(true);
     try {
       const isFollowUp = selectedLead.status === 'Follow-up';
       const endpoint = isFollowUp ? '/communication/generate-follow-up' : '/communication/smart-reply';
-      const payload = isFollowUp 
-        ? { leadId: selectedLead.id, leadData: selectedLead.raw, customOffer }
-        : { leadData: selectedLead.raw, emailContext: 'Initial outreach for event planning inquiry', customOffer };
+      const payload = isFollowUp
+        ? { leadId: selectedLead.id, leadData: selectedLead.raw, customOffer: activeOffer }
+        : { leadId: selectedLead.id, leadData: selectedLead.raw, emailContext: 'Initial outreach for event planning inquiry', customOffer: activeOffer };
 
       const response = await api.post(endpoint, payload);
       setGeneratedEmail(response.data.draft);
@@ -721,9 +992,9 @@ const LeadAnalyzer = () => {
     if (!selectedLead) return;
     setGeneratingSms(true);
     try {
-      const response = await api.post('/communication/generate-sms', { 
-        leadId: selectedLead.id, 
-        leadData: selectedLead.raw 
+      const response = await api.post('/communication/generate-sms', {
+        leadId: selectedLead.id,
+        leadData: selectedLead.raw
       });
       setGeneratedSms(response.data.sms);
     } catch (error) {
@@ -738,13 +1009,11 @@ const LeadAnalyzer = () => {
     if (!selectedLead) return;
     setSendingEmail(true);
     try {
-      // 1. Backend sending and recording
       await api.post('/communication/send-email', {
         leadId: selectedLead.id,
         content: content,
         subject: `Re: Inquiry - ${selectedLead.companyName}`
       });
-
       alert('Email sent successfully directly from the server!');
     } catch (error) {
       console.error('Failed to send email:', error);
@@ -761,16 +1030,12 @@ const LeadAnalyzer = () => {
   const handleHotelChange = async (hotelId) => {
     if (!selectedLeadId) return;
     try {
-      // Find the hotel object to get its code
       const hotel = allHotelOffers.find(h => h.HotelOfferID === hotelId);
-      
-      await api.put(`/leads/${selectedLeadId}`, { 
+      await api.put(`/leads/${selectedLeadId}`, {
         selectedHotelOfferId: hotelId,
         SelectedHotelCode: hotel?.HotelCode,
         PropertyID: hotel?.HotelCode
       });
-      
-      // Refresh local leads to reflect change
       loadLeads();
     } catch (error) {
       console.error('Failed to update lead hotel:', error);
@@ -788,24 +1053,67 @@ const LeadAnalyzer = () => {
 
   const columns = useMemo(() => [
     {
-      accessorKey: 'leadNo',
-      header: 'Lead No',
-      cell: ({ row }) => (
-        <button
-          onClick={() => navigate(`/leads/new/${row.original.id}`)}
-          className="font-semibold text-primary-700 dark:text-primary-300 hover:underline"
-        >
-          {row.original.leadNo}
-        </button>
-      ),
-    },
-    {
       accessorKey: 'companyName',
       header: 'Company',
       cell: ({ row }) => (
-        <div>
-          <p className="font-bold text-slate-900 dark:text-white">{row.original.companyName}</p>
-          <p className="text-xs text-slate-500 dark:text-slate-400">{row.original.contactName}</p>
+        <div className="flex flex-col gap-1 py-0.5 min-w-[240px]">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate(`/leads/new/${row.original.id}`)}
+              className="font-bold text-slate-900 dark:text-white hover:text-primary-600 hover:underline transition-colors truncate text-sm"
+              title={row.original.companyName}
+            >
+              {row.original.companyName}
+            </button>
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate shrink-0">
+              ({row.original.contactName})
+            </span>
+            <div className="flex items-center gap-2 shrink-0 ml-auto border-l border-slate-100 dark:border-dark-800 pl-2">
+              <div className="flex gap-1.5">
+                {row.original.nurture.needsNurture && (
+                  <span
+                    title={`Last activity: ${formatDuration(row.original.nurture.inactiveMin)} ago`}
+                    className="h-2.5 w-2.5 rounded-full bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.8)] cursor-help shrink-0"
+                  ></span>
+                )}
+                {row.original.nurture.isStale && (
+                  <span
+                    title={`Lead age: ${formatDuration(row.original.nurture.ageMin)}`}
+                    className="h-2.5 w-2.5 rounded-full bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.8)] cursor-help shrink-0"
+                  ></span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 ml-1.5 border-l border-slate-100 dark:border-dark-800 pl-2">
+                {row.original.email !== '-' && (
+                  <Mail size={12} className={row.original.preferredMethod === 'Email' ? 'text-primary-500' : 'text-slate-300 dark:text-slate-600'} />
+                )}
+                {row.original.mobileNo !== '-' && (
+                  <div className="flex items-center gap-1.5">
+                    <Phone size={12} className={row.original.preferredMethod === 'Phone' ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'} />
+                    <MessageSquare size={12} className={['sms', 'text'].includes(row.original.preferredMethod?.toLowerCase()) ? 'text-indigo-500' : 'text-slate-300 dark:text-slate-600'} />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {row.original.nurture.needsNurture && (
+              <span
+                title={`Last activity: ${formatDuration(row.original.nurture.inactiveMin)} ago`}
+                className="px-1.5 py-0.5 rounded-[4px] text-[9px] font-black uppercase tracking-tight bg-amber-50 text-amber-600 border border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 cursor-help"
+              >
+                Awaiting Action
+              </span>
+            )}
+            {row.original.nurture.isStale && (
+              <span
+                title={`Lead age: ${formatDuration(row.original.nurture.ageMin)}`}
+                className="px-1.5 py-0.5 rounded-[4px] text-[9px] font-black uppercase tracking-tight bg-rose-50 text-rose-600 border border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 cursor-help"
+              >
+                Stale Lead
+              </span>
+            )}
+          </div>
         </div>
       ),
     },
@@ -816,6 +1124,9 @@ const LeadAnalyzer = () => {
     {
       accessorKey: 'mobileNo',
       header: 'Mobile',
+      cell: ({ getValue }) => (
+        <span className="inline-block min-w-[100px]">{getValue()}</span>
+      ),
     },
     {
       accessorKey: 'city',
@@ -825,7 +1136,7 @@ const LeadAnalyzer = () => {
       accessorKey: 'type',
       header: 'Type',
       cell: ({ getValue }) => (
-        <span className="inline-flex px-2 py-1 rounded-md text-xs font-medium bg-slate-100 dark:bg-dark-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-dark-600">
+        <span className="inline-flex px-2 py-1 rounded-md text-xs font-medium bg-slate-100 dark:bg-dark-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-dark-600 min-w-[70px] justify-center">
           {getValue()}
         </span>
       ),
@@ -834,7 +1145,7 @@ const LeadAnalyzer = () => {
       accessorKey: 'status',
       header: 'Status',
       cell: ({ getValue }) => (
-        <span className="inline-flex px-2 py-1 rounded-md text-xs font-medium bg-white dark:bg-dark-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-dark-600">
+        <span className="inline-flex px-2 py-1 rounded-md text-xs font-medium bg-white dark:bg-dark-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-dark-600 min-w-[80px] justify-center">
           {getValue()}
         </span>
       ),
@@ -842,20 +1153,30 @@ const LeadAnalyzer = () => {
     {
       accessorKey: 'priority',
       header: 'Priority',
+      cell: ({ getValue }) => (
+        <span className="inline-block min-w-[70px]">{getValue()}</span>
+      ),
     },
     {
       accessorKey: 'score',
-      header: 'AI Probability',
+      header: 'AI Prob.',
       filterFn: (row, columnId, filterValue) => {
         if (!filterValue) return true;
-        return Number(row.getValue(columnId)) >= Number(filterValue);
+        const score = Number(row.getValue(columnId));
+        if (typeof filterValue === 'object') {
+          const { min, max } = filterValue;
+          return score >= (min ?? 0) && score <= (max ?? 100);
+        }
+        return score >= Number(filterValue);
       },
       cell: ({ getValue }) => {
         const score = getValue();
         return (
-          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${getScoreBadge(score)}`}>
-            {score}%
-          </span>
+          <div className="min-w-[80px]">
+            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${getScoreBadge(score)}`}>
+              {score}%
+            </span>
+          </div>
         );
       },
     },
@@ -863,7 +1184,7 @@ const LeadAnalyzer = () => {
       accessorKey: 'action',
       header: 'Next Best Action',
       cell: ({ getValue }) => (
-        <div className="flex items-start gap-2 min-w-64">
+        <div className="flex items-start gap-2 min-w-[180px]">
           <Zap className="text-primary-500 shrink-0 mt-0.5" size={14} />
           <p className="text-sm text-slate-700 dark:text-slate-300 leading-snug">{getValue()}</p>
         </div>
@@ -879,7 +1200,7 @@ const LeadAnalyzer = () => {
       header: 'Actions',
       enableSorting: false,
       cell: ({ row }) => (
-        <div className="flex items-center justify-end gap-2">
+        <div className="flex items-center justify-end gap-1.5">
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -890,20 +1211,54 @@ const LeadAnalyzer = () => {
           >
             <Edit2 size={16} />
           </button>
-          {['Pending', 'Follow-up'].includes(row.original.status) && (
+          {row.original.preferredMethod === 'Email' && row.original.email !== '-' && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                handleRowClick(row.original.id, true);
+                handleRowClick(row.original.id, 'email');
               }}
-              className="w-8 h-8 inline-flex items-center justify-center rounded-lg bg-primary-600 text-white hover:bg-primary-700"
-              title={row.original.status === 'Follow-up' ? 'Generate follow-up email' : 'Generate contact email'}
+              className="w-8 h-8 inline-flex items-center justify-center rounded-lg bg-primary-600 text-white hover:bg-primary-700 shadow-sm shadow-primary-500/20 active:scale-95"
+              title="Email Follow-up"
             >
-              <Mail size={16} />
+              <Mail size={14} />
+            </button>
+          )}
+          {row.original.preferredMethod === 'Phone' && row.original.mobileNo !== '-' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRowClick(row.original.id, 'phone');
+              }}
+              className="w-8 h-8 inline-flex items-center justify-center rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm shadow-emerald-500/20 active:scale-95"
+              title="Phone Call"
+            >
+              <Phone size={14} />
+            </button>
+          )}
+          {row.original.preferredMethod === 'Text' && row.original.mobileNo !== '-' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRowClick(row.original.id, 'text');
+              }}
+              className="w-8 h-8 inline-flex items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm shadow-indigo-500/20 active:scale-95"
+              title="Text Follow-up"
+            >
+              <Smartphone size={14} />
             </button>
           )}
         </div>
       ),
+    },
+    {
+      id: 'needsNurture',
+      accessorFn: (row) => row.nurture.needsNurture,
+      filterFn: 'equals',
+    },
+    {
+      id: 'isStale',
+      accessorFn: (row) => row.nurture.isStale,
+      filterFn: 'equals',
     },
   ], [analyzingId, navigate]);
 
@@ -920,21 +1275,6 @@ const LeadAnalyzer = () => {
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
-    globalFilterFn: (row, _columnId, filterValue) => {
-      const search = String(filterValue).toLowerCase();
-      return [
-        row.original.leadNo,
-        row.original.companyName,
-        row.original.contactName,
-        row.original.email,
-        row.original.mobileNo,
-        row.original.city,
-        row.original.type,
-        row.original.status,
-        row.original.priority,
-        row.original.action,
-      ].some((value) => String(value || '').toLowerCase().includes(search));
-    },
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -946,9 +1286,16 @@ const LeadAnalyzer = () => {
     },
   });
 
-  const highValueCount = leads.filter((lead) => lead.score >= 82).length;
-  const nurtureCount = leads.filter((lead) => lead.score >= 65 && lead.score < 82).length;
-  const atRiskCount = leads.filter((lead) => lead.score < 65).length;
+  const highValueCount = leads.filter((lead) => lead.score > 80).length;
+  const nurtureCount = leads.filter((lead) => lead.score >= 50 && lead.score <= 80).length;
+  const atRiskCount = leads.filter((lead) => lead.score < 50).length;
+  const awaitingCount = leads.filter((lead) => lead.nurture.needsNurture).length;
+  const staleCount = leads.filter((lead) => lead.nurture.isStale).length;
+
+  const clearAllFilters = () => {
+    table.resetColumnFilters();
+    setGlobalFilter('');
+  };
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -980,18 +1327,84 @@ const LeadAnalyzer = () => {
                 Lead Pipeline Database
               </h2>
               <div className="flex flex-wrap gap-2">
-                <span className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white dark:bg-dark-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-dark-600 flex items-center gap-1 shadow-sm">
-                  <LayoutList size={14} className="text-primary-500" /> {leads.length} Total
-                </span>
-                <span className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white dark:bg-dark-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-dark-600 flex items-center gap-1 shadow-sm">
-                  <Target size={14} className="text-emerald-500" /> {highValueCount} High Value (Hot)
-                </span>
-                <span className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white dark:bg-dark-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-dark-600 flex items-center gap-1 shadow-sm">
-                  <AlertCircle size={14} className="text-amber-500" /> {nurtureCount} Nurture (Warm)
-                </span>
-                <span className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white dark:bg-dark-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-dark-600 flex items-center gap-1 shadow-sm">
-                  <AlertCircle size={14} className="text-rose-500" /> {atRiskCount} At Risk (Cold)
-                </span>
+                <button
+                  onClick={clearAllFilters}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm border ${!table.getState().columnFilters.length && !globalFilter
+                      ? 'bg-primary-600 text-white border-primary-600'
+                      : 'bg-white dark:bg-dark-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-dark-600 hover:border-primary-400'
+                    }`}
+                >
+                  <LayoutList size={14} className={!table.getState().columnFilters.length && !globalFilter ? 'text-white' : 'text-primary-500'} />
+                  {leads.length} Total
+                </button>
+                <button
+                  onClick={() => {
+                    table.resetColumnFilters();
+                    table.getColumn('score')?.setFilterValue({ min: 81, max: 100 });
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm border ${JSON.stringify(table.getColumn('score')?.getFilterValue()) === JSON.stringify({ min: 81, max: 100 })
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : 'bg-white dark:bg-dark-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-dark-600 hover:border-emerald-400'
+                    }`}
+                >
+                  <Target size={14} className={JSON.stringify(table.getColumn('score')?.getFilterValue()) === JSON.stringify({ min: 81, max: 100 }) ? 'text-white' : 'text-emerald-500'} />
+                  {highValueCount} High Value (Hot)
+                </button>
+                <button
+                  onClick={() => {
+                    table.resetColumnFilters();
+                    table.getColumn('score')?.setFilterValue({ min: 50, max: 80 });
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm border ${JSON.stringify(table.getColumn('score')?.getFilterValue()) === JSON.stringify({ min: 50, max: 80 })
+                      ? 'bg-amber-600 text-white border-amber-600'
+                      : 'bg-white dark:bg-dark-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-dark-600 hover:border-amber-400'
+                    }`}
+                >
+                  <AlertCircle size={14} className={JSON.stringify(table.getColumn('score')?.getFilterValue()) === JSON.stringify({ min: 50, max: 80 }) ? 'text-white' : 'text-amber-500'} />
+                  {nurtureCount} Nurture (Warm)
+                </button>
+                <button
+                  onClick={() => {
+                    table.resetColumnFilters();
+                    table.getColumn('score')?.setFilterValue({ min: 0, max: 49 });
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm border ${JSON.stringify(table.getColumn('score')?.getFilterValue()) === JSON.stringify({ min: 0, max: 49 })
+                      ? 'bg-rose-600 text-white border-rose-600'
+                      : 'bg-white dark:bg-dark-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-dark-600 hover:border-rose-400'
+                    }`}
+                >
+                  <AlertCircle size={14} className={JSON.stringify(table.getColumn('score')?.getFilterValue()) === JSON.stringify({ min: 0, max: 49 }) ? 'text-white' : 'text-rose-500'} />
+                  {atRiskCount} At Risk (Cold)
+                </button>
+
+                <div className="w-px h-8 bg-slate-200 dark:bg-dark-700 mx-1 self-center hidden sm:block"></div>
+
+                <button
+                  onClick={() => {
+                    table.resetColumnFilters();
+                    table.getColumn('needsNurture')?.setFilterValue(true);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm border ${table.getColumn('needsNurture')?.getFilterValue() === true
+                      ? 'bg-amber-500 text-white border-amber-500'
+                      : 'bg-white dark:bg-dark-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-dark-600 hover:border-amber-400'
+                    }`}
+                >
+                  <div className={`h-2 w-2 rounded-full bg-amber-500 border border-white shadow-[0_0_8px_rgba(245,158,11,0.6)] ${table.getColumn('needsNurture')?.getFilterValue() === true ? 'animate-pulse' : ''}`}></div>
+                  {awaitingCount} Awaiting Action
+                </button>
+                <button
+                  onClick={() => {
+                    table.resetColumnFilters();
+                    table.getColumn('isStale')?.setFilterValue(true);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm border ${table.getColumn('isStale')?.getFilterValue() === true
+                      ? 'bg-rose-500 text-white border-rose-500'
+                      : 'bg-white dark:bg-dark-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-dark-600 hover:border-rose-400'
+                    }`}
+                >
+                  <div className="h-2 w-2 rounded-full bg-rose-500 border border-white shadow-[0_0_8px_rgba(244,63,94,0.6)]"></div>
+                  {staleCount} Stale Lead
+                </button>
               </div>
             </div>
 
@@ -1001,7 +1414,7 @@ const LeadAnalyzer = () => {
                 <input
                   value={globalFilter ?? ''}
                   onChange={(event) => setGlobalFilter(event.target.value)}
-                  placeholder="Search leads, company, contact, email, action..."
+                  placeholder="Search leads..."
                   className="input-field pl-10 bg-white dark:bg-dark-900"
                 />
               </div>
@@ -1011,7 +1424,11 @@ const LeadAnalyzer = () => {
                 className="input-field bg-white dark:bg-dark-900"
               >
                 <option value="">All statuses</option>
-                {statusOptions.map((status) => <option key={status} value={status}>{status}</option>)}
+                <option value="Pending">Pending</option>
+                <option value="Follow-up">Follow-up</option>
+                <option value="Closed">Closed</option>
+                {/* <option value="">All statuses</option>
+                {statusOptions.map((status) => <option key={status} value={status}>{status}</option>)} */}
               </select>
               <select
                 value={table.getColumn('type')?.getFilterValue() ?? ''}
@@ -1019,7 +1436,12 @@ const LeadAnalyzer = () => {
                 className="input-field bg-white dark:bg-dark-900"
               >
                 <option value="">All types</option>
-                {typeOptions.map((type) => <option key={type} value={type}>{type}</option>)}
+                <option value="Corporate">Corporate</option>
+                <option value="Association">Association</option>
+                <option value="SMERF">SMERF</option>
+                <option value="Wedding">Wedding</option>
+                {/* <option value="">All types</option>
+                {typeOptions.map((type) => <option key={type} value={type}>{type}</option>)} */}
               </select>
               <select
                 value={table.getColumn('score')?.getFilterValue() ?? ''}
@@ -1032,44 +1454,6 @@ const LeadAnalyzer = () => {
                 <option value="40">40% and up</option>
               </select>
             </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                <Filter size={14} />
-                <span>{table.getFilteredRowModel().rows.length} matching records</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => {
-                    setGlobalFilter('');
-                    setColumnFilters([]);
-                  }}
-                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-white dark:bg-dark-700 border border-slate-200 dark:border-dark-600 text-slate-600 dark:text-slate-300 hover:text-primary-600"
-                >
-                  Clear Filters
-                </button>
-                <div className="relative group">
-                  <button className="px-3 py-2 rounded-lg text-xs font-semibold bg-white dark:bg-dark-700 border border-slate-200 dark:border-dark-600 text-slate-600 dark:text-slate-300 hover:text-primary-600 flex items-center gap-2">
-                    <SlidersHorizontal size={14} />
-                    Columns
-                  </button>
-                  <div className="hidden group-hover:block absolute right-0 top-full pt-2 z-30 w-56">
-                    <div className="rounded-lg border border-slate-200 dark:border-dark-700 bg-white dark:bg-dark-800 shadow-xl p-2 max-h-80 overflow-y-auto">
-                      {table.getAllLeafColumns().filter((column) => column.id !== 'actions').map((column) => (
-                        <label key={column.id} className="flex items-center gap-2 px-2 py-1.5 text-sm text-slate-600 dark:text-slate-300">
-                          <input
-                            type="checkbox"
-                            checked={column.getIsVisible()}
-                            onChange={column.getToggleVisibilityHandler()}
-                          />
-                          <span>{typeof column.columnDef.header === 'string' ? column.columnDef.header : column.id}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -1078,21 +1462,14 @@ const LeadAnalyzer = () => {
                 {table.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id} className="bg-slate-50/80 dark:bg-dark-900/40 border-b border-slate-200 dark:border-dark-700/50 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider">
                     {headerGroup.headers.map((header) => (
-                      <th key={header.id} className="p-4 font-semibold whitespace-nowrap">
+                      <th key={header.id} className="p-4 font-semibold">
                         {header.isPlaceholder ? null : (
                           <button
                             onClick={header.column.getToggleSortingHandler()}
                             disabled={!header.column.getCanSort()}
-                            className="flex items-center gap-1 hover:text-slate-800 dark:hover:text-slate-100 disabled:hover:text-inherit"
+                            className="flex items-center gap-1"
                           >
                             {flexRender(header.column.columnDef.header, header.getContext())}
-                            {header.column.getCanSort() && (
-                              header.column.getIsSorted() === 'asc'
-                                ? <ArrowUp size={13} />
-                                : header.column.getIsSorted() === 'desc'
-                                  ? <ArrowDown size={13} />
-                                  : <ArrowUpDown size={13} />
-                            )}
                           </button>
                         )}
                       </th>
@@ -1111,7 +1488,12 @@ const LeadAnalyzer = () => {
                   table.getRowModel().rows.map((row) => (
                     <tr
                       key={row.id}
-                      className="hover:bg-slate-50/70 dark:hover:bg-dark-800/30 transition-colors"
+                      className={`transition-all duration-200 border-l-4 ${row.original.nurture.isStale
+                        ? 'bg-rose-50/30 dark:bg-rose-500/5 hover:bg-rose-50/50 dark:hover:bg-rose-500/10 border-l-rose-500'
+                        : row.original.nurture.needsNurture
+                          ? 'bg-amber-50/30 dark:bg-amber-500/5 hover:bg-amber-50/50 dark:hover:bg-amber-500/10 border-l-amber-500'
+                          : 'hover:bg-slate-50/70 dark:hover:bg-dark-800/30 border-l-transparent'
+                        }`}
                     >
                       {row.getVisibleCells().map((cell) => (
                         <td key={cell.id} className="p-4 align-top text-sm text-slate-700 dark:text-slate-300">
@@ -1123,7 +1505,7 @@ const LeadAnalyzer = () => {
                 ) : (
                   <tr>
                     <td colSpan={table.getVisibleLeafColumns().length} className="p-8 text-center text-sm text-slate-500">
-                      No leads match the current filters.
+                      No leads match.
                     </td>
                   </tr>
                 )}
@@ -1131,73 +1513,120 @@ const LeadAnalyzer = () => {
             </table>
           </div>
 
-          <div className="px-5 py-4 border-t border-slate-200 dark:border-dark-700/50 flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}
-            </p>
-            <div className="flex items-center gap-2">
+          {/* Pagination Controls */}
+          <div className="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-dark-800/50 border-t border-slate-200 dark:border-dark-700/50">
+            <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+              <span>Show</span>
               <select
                 value={table.getState().pagination.pageSize}
-                onChange={(event) => table.setPageSize(Number(event.target.value))}
-                className="input-field bg-white dark:bg-dark-900 w-28 text-sm"
+                onChange={(e) => table.setPageSize(Number(e.target.value))}
+                className="input-field bg-white dark:bg-dark-900 text-sm py-1 px-2"
               >
-                {[5, 8, 10, 20].map((pageSize) => (
-                  <option key={pageSize} value={pageSize}>
-                    {pageSize} rows
+                {[8, 16, 24, 32].map((size) => (
+                  <option key={size} value={size}>
+                    {size}
                   </option>
                 ))}
               </select>
-              <button
-                onClick={() => table.setPageIndex(0)}
-                disabled={!table.getCanPreviousPage()}
-                className="w-9 h-9 inline-flex items-center justify-center rounded-lg bg-white dark:bg-dark-700 border border-slate-200 dark:border-dark-600 disabled:opacity-40"
-              >
-                <ChevronsLeft size={16} />
-              </button>
-              <button
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
-                className="w-9 h-9 inline-flex items-center justify-center rounded-lg bg-white dark:bg-dark-700 border border-slate-200 dark:border-dark-600 disabled:opacity-40"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <button
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
-                className="w-9 h-9 inline-flex items-center justify-center rounded-lg bg-white dark:bg-dark-700 border border-slate-200 dark:border-dark-600 disabled:opacity-40"
-              >
-                <ChevronRight size={16} />
-              </button>
-              <button
-                onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                disabled={!table.getCanNextPage()}
-                className="w-9 h-9 inline-flex items-center justify-center rounded-lg bg-white dark:bg-dark-700 border border-slate-200 dark:border-dark-600 disabled:opacity-40"
-              >
-                <ChevronsRight size={16} />
-              </button>
+              <span>entries</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-600 dark:text-slate-400">
+                Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
+              </span>
+
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => table.setPageIndex(0)}
+                  disabled={!table.getCanPreviousPage()}
+                  className="p-1 rounded border border-slate-300 dark:border-dark-600 hover:bg-slate-100 dark:hover:bg-dark-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="First page"
+                >
+                  <ChevronsLeft size={16} />
+                </button>
+                <button
+                  onClick={() => table.previousPage()}
+                  disabled={!table.getCanPreviousPage()}
+                  className="p-1 rounded border border-slate-300 dark:border-dark-600 hover:bg-slate-100 dark:hover:bg-dark-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Previous page"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+
+                {/* Page numbers */}
+                <div className="flex items-center gap-1 mx-2">
+                  {Array.from({ length: Math.min(5, table.getPageCount()) }, (_, i) => {
+                    const pageIndex = Math.max(0, Math.min(table.getPageCount() - 5, table.getState().pagination.pageIndex - 2)) + i;
+                    if (pageIndex >= table.getPageCount()) return null;
+
+                    return (
+                      <button
+                        key={pageIndex}
+                        onClick={() => table.setPageIndex(pageIndex)}
+                        className={`px-3 py-1 text-sm rounded border ${table.getState().pagination.pageIndex === pageIndex
+                            ? 'bg-primary-500 text-white border-primary-500'
+                            : 'border-slate-300 dark:border-dark-600 hover:bg-slate-100 dark:hover:bg-dark-700'
+                          }`}
+                      >
+                        {pageIndex + 1}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  onClick={() => table.nextPage()}
+                  disabled={!table.getCanNextPage()}
+                  className="p-1 rounded border border-slate-300 dark:border-dark-600 hover:bg-slate-100 dark:hover:bg-dark-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Next page"
+                >
+                  <ChevronRight size={16} />
+                </button>
+                <button
+                  onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+                  disabled={!table.getCanNextPage()}
+                  className="p-1 rounded border border-slate-300 dark:border-dark-600 hover:bg-slate-100 dark:hover:bg-dark-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Last page"
+                >
+                  <ChevronsRight size={16} />
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
-        {showModal && selectedLead && (
-          <LeadDetailView
+        {activeModal === 'email' && selectedLead && (
+          <EmailModal
             lead={selectedLead}
             onClose={handleCloseModal}
-            onAnalyze={runAnalysis}
-            analyzingId={analyzingId}
-            onGenerateEmail={generateEmail}
-            generatingEmail={generatingEmail}
-            generatedEmail={generatedEmail}
-            customOffer={customOffer}
-            onCustomOfferChange={setCustomOffer}
-            generatingSms={generatingSms}
-            generatedSms={generatedSms}
-            onSendEmail={handleSendEmail}
-            sendingEmail={sendingEmail}
-            onEmailChange={handleEmailChange}
             hotelOffer={currentHotelOffer}
             allHotelOffers={allHotelOffers}
             onHotelChange={handleHotelChange}
+            onGenerateEmail={generateEmail}
+            generatingEmail={generatingEmail}
+            generatedEmail={generatedEmail}
+            onEmailChange={handleEmailChange}
+            onSendEmail={handleSendEmail}
+            sendingEmail={sendingEmail}
+            customOffer={customOffer}
+            onCustomOfferChange={setCustomOffer}
+          />
+        )}
+
+        {activeModal === 'phone' && selectedLead && (
+          <PhoneModal
+            lead={selectedLead}
+            onClose={handleCloseModal}
+          />
+        )}
+
+        {activeModal === 'text' && selectedLead && (
+          <TextModal
+            lead={selectedLead}
+            onClose={handleCloseModal}
+            generatedSms={generatedSms}
+            generatingSms={generatingSms}
           />
         )}
       </div>
