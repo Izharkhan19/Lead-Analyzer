@@ -19,10 +19,10 @@ const Sidebar = () => {
     <aside className="w-[256px] bg-[#040183] border-none rounded-none h-screen fixed left-0 top-0 flex flex-col p-4 z-20 shadow-xl">
       <div className="flex items-center gap-3 mb-10 px-2 mt-4">
         <div className="w-8 h-8 rounded bg-white flex items-center justify-center text-[#040183] font-bold text-xl">
-          IN
+          LN
         </div>
         <h1 className="text-xl font-bold text-white tracking-widest">
-          INNtelligent
+          Lead-Nurturing
         </h1>
       </div>
 
