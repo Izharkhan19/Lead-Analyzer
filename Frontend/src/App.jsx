@@ -151,7 +151,7 @@ function App() {
         <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
         <Header isDark={isDark} setIsDark={setIsDark} isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
 
-        <main className="w-full md:w-[calc(100%-256px)] md:ml-auto pt-[80px] p-4 md:p-8 min-h-screen relative">
+        <main className="w-full md:w-[calc(100%-256px)] md:ml-auto !pt-[80px] p-4 md:p-8 min-h-screen relative !h-[calc(100vh-200px)] !overflow-auto">
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/leads" element={<LeadAnalyzer />} />
