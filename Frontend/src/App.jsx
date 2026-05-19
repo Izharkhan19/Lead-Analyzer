@@ -146,12 +146,12 @@ function App() {
 
   return (
     <Router>
-      <div className="relative w-full min-h-screen overflow-x-hidden bg-[#f4f7fa] dark:bg-dark-900 text-slate-800 dark:text-slate-200">
+      <div className="relative w-full min-h-screen overflow-x-hidden bg-[#f4f7fa] dark:bg-dark-900 text-slate-800 dark:text-slate-200 flex">
 
         <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
         <Header isDark={isDark} setIsDark={setIsDark} isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
 
-        <main className="w-full md:w-[calc(100%-256px)] md:ml-auto pt-20 p-4 md:p-8 min-h-screen relative">
+        <main className="w-full md:w-[calc(100%-256px)] md:ml-auto pt-[80px] p-4 md:p-8 min-h-screen relative">
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/leads" element={<LeadAnalyzer />} />
